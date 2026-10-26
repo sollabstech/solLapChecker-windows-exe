@@ -1,0 +1,42 @@
+SolLapChecker - third-party software
+====================================
+
+SolLapChecker by Sollabs Tech includes or uses the following software.
+Each component remains under its own licence.
+
+smartmontools (smartctl.exe)
+  Copyright (C) Bruce Allen, Christian Franke and contributors.
+  Licence: GNU General Public License, version 2 or later.
+  Full text: smartmontools-COPYING.txt (installed in this folder).
+  Source code and website: https://www.smartmontools.org/
+  smartctl.exe is a separate program that SolLapChecker starts to read drive
+  SMART data. It is distributed unmodified.
+
+LibreHardwareMonitorLib (inside SolHelper.exe)
+  Licence: Mozilla Public License 2.0.
+  https://github.com/LibreHardwareMonitor/LibreHardwareMonitor
+
+Vortice.Windows - DXGI, Direct3D 11 and D3DCompiler bindings (inside SolHelper.exe)
+  Licence: MIT.  https://github.com/amerkoleci/Vortice.Windows
+
+.NET runtime (bundled in SolHelper.exe)
+  Licence: MIT.  https://github.com/dotnet/runtime
+
+PawnIO sensor driver (optional, installed separately)
+  Not part of SolLapChecker. Offered only if its installer was included; it is
+  covered by its own licence. https://pawnio.eu/
+
+Flutter and Dart packages (the application)
+  Flutter engine and framework: BSD 3-Clause.
+  Packages used include get, window_manager, camera, audioplayers, record,
+  pdf, barcode, path_provider and ffi, each under a permissive open-source
+  licence (BSD, MIT or Apache 2.0). The complete list with licence texts is
+  available inside the app's data folder (data\flutter_assets\NOTICES.Z).
+
+Fonts
+  Inter (OFL 1.1) - https://rsms.me/inter/
+  Roboto (Apache 2.0) - https://github.com/googlefonts/roboto
+
+Visual C++ runtime (msvcp140.dll, vcruntime140.dll, ...)
+  Microsoft Visual C++ Redistributable, redistributed under Microsoft's
+  redistribution terms.
