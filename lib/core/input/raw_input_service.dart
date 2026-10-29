@@ -66,6 +66,8 @@ abstract class RawInputServiceBase implements RawInputService {
 const _wmInput = 0x00FF;
 const _ridInput = 0x10000003;
 const _ridiDeviceName = 0x20000007;
+const _ridiDeviceInfo = 0x2000000b;
+const _ridDeviceInfoSize = 32;
 const _ridevRemove = 0x00000001;
 const _ridevInputSink = 0x00000100;
 const _hwndMessage = -3;
@@ -204,30 +206,45 @@ class WindowsRawInputService extends RawInputServiceBase {
       throw StateError('Could not create the raw input window.');
     }
 
-    if (!_register(_ridevInputSink, _hwnd)) {
+    if (!_register(_core, _ridevInputSink, _hwnd)) {
       _teardown();
       throw StateError('RegisterRawInputDevices failed.');
+    }
+    // Optional extras, one at a time: a failure only loses that signal.
+    for (final usage in _extras) {
+      if (_register([usage], _ridevInputSink, _hwnd)) _registeredExtras.add(usage);
     }
   }
 
   @override
   void stopNative() => _teardown();
 
-  /// Registers (or with RIDEV_REMOVE, unregisters) keyboards (1,6) and mice (1,2).
-  bool _register(int flags, Pointer<Void> target) {
-    final devs = calloc<_RawInputDevice>(2);
+  /// Keyboards (1,6) and mice (1,2): required.
+  static const _core = [(hidPageGenericDesktop, 0x06), (hidPageGenericDesktop, 0x02)];
+
+  /// Media/system/airplane keys (evidence that Fn works) and precision-touchpad
+  /// contacts (proof that cursor input with no device handle came from the pad).
+  static const _extras = [
+    (hidPageConsumer, hidUsageConsumerControl),
+    (hidPageGenericDesktop, hidUsageSystemControl),
+    (hidPageGenericDesktop, hidUsageRadioControls),
+    (hidPageDigitizer, hidUsageTouchpad),
+  ];
+
+  final _registeredExtras = <(int, int)>[];
+
+  /// Registers (or with RIDEV_REMOVE, unregisters) the given (usage page, usage) pairs.
+  bool _register(List<(int, int)> usages, int flags, Pointer<Void> target) {
+    final devs = calloc<_RawInputDevice>(usages.length);
     try {
-      devs[0]
-        ..usUsagePage = 0x01
-        ..usUsage = 0x06
-        ..dwFlags = flags
-        ..hwndTarget = target;
-      devs[1]
-        ..usUsagePage = 0x01
-        ..usUsage = 0x02
-        ..dwFlags = flags
-        ..hwndTarget = target;
-      return _Win32.registerRawInputDevices(devs, 2, sizeOf<_RawInputDevice>()) != 0;
+      for (var i = 0; i < usages.length; i++) {
+        devs[i]
+          ..usUsagePage = usages[i].$1
+          ..usUsage = usages[i].$2
+          ..dwFlags = flags
+          ..hwndTarget = target;
+      }
+      return _Win32.registerRawInputDevices(devs, usages.length, sizeOf<_RawInputDevice>()) != 0;
     } finally {
       calloc.free(devs);
     }
@@ -235,7 +252,9 @@ class WindowsRawInputService extends RawInputServiceBase {
 
   void _teardown() {
     if (_hwnd != nullptr) {
-      _register(_ridevRemove, nullptr);
+      _register(_core, _ridevRemove, nullptr);
+      if (_registeredExtras.isNotEmpty) _register(_registeredExtras, _ridevRemove, nullptr);
+      _registeredExtras.clear();
       _Win32.destroyWindow(_hwnd);
       _hwnd = nullptr;
     }
@@ -281,7 +300,11 @@ class WindowsRawInputService extends RawInputServiceBase {
       final packet = parseRawInput(bytes, inForeground: true, headerSize: _headerSize);
       if (packet == null) return;
 
-      final kind = packet is RawKeyPacket ? InputDeviceKind.keyboard : InputDeviceKind.mouse;
+      final kind = switch (packet) {
+        RawKeyPacket() => InputDeviceKind.keyboard,
+        RawMousePacket() => InputDeviceKind.mouse,
+        RawHidPacket() => InputDeviceKind.hid,
+      };
       emit(InputEvent(_deviceFor(packet.deviceHandle, kind), packet));
     } finally {
       calloc.free(sizePtr);
@@ -295,13 +318,34 @@ class WindowsRawInputService extends RawInputServiceBase {
     }
     return _devices.putIfAbsent(handle, () {
       final path = _devicePath(handle);
+      final (page, usage) = kind == InputDeviceKind.hid ? _hidUsage(handle) : (0, 0);
       return InputDevice(
         handle: handle,
         kind: kind,
         path: path,
         bus: classifyDevicePath(path, native: _nativeBusInfo(path)),
+        usagePage: page,
+        usage: usage,
       );
     });
+  }
+
+  /// Top-level collection (usage page, usage) of a HID device, from RID_DEVICE_INFO.
+  (int, int) _hidUsage(int handle) {
+    final buf = calloc<Uint8>(_ridDeviceInfoSize);
+    final sizePtr = calloc<Uint32>()..value = _ridDeviceInfoSize;
+    try {
+      buf.cast<Uint32>().value = _ridDeviceInfoSize; // cbSize
+      final n = _Win32.getRawInputDeviceInfo(Pointer<Void>.fromAddress(handle), _ridiDeviceInfo, buf.cast(), sizePtr);
+      if (n == 0xFFFFFFFF || n == 0) return (0, 0);
+      final d = ByteData.sublistView(Uint8List.fromList(buf.asTypedList(_ridDeviceInfoSize)));
+      // RID_DEVICE_INFO: cbSize, dwType, then RID_DEVICE_INFO_HID
+      // { dwVendorId, dwProductId, dwVersionNumber, usUsagePage, usUsage }.
+      return (d.getUint16(20, Endian.little), d.getUint16(22, Endian.little));
+    } finally {
+      calloc.free(buf);
+      calloc.free(sizePtr);
+    }
   }
 
   String _devicePath(int handle) {

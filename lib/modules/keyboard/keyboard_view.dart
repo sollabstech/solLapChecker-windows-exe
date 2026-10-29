@@ -89,10 +89,11 @@ class _KeyboardViewState extends State<KeyboardView> {
         const SizedBox(height: 10),
         const Text(
           'Press every key on the laptop\'s own keyboard. Keys from an external keyboard are ignored. '
-          'Fn and other keys that send no signal to Windows: click the key to confirm it by hand. '
           'Click any key to mark it as working or not working.',
           style: TextStyle(color: AppColors.muted, fontSize: 12.5, height: 1.4),
         ),
+        const SizedBox(height: 10),
+        _FnHint(c: c),
         Obx(() {
           if (c.otherKeys.isEmpty) return const SizedBox.shrink();
           return Padding(
@@ -180,6 +181,52 @@ class _Summary extends StatelessWidget {
   }
 }
 
+/// How to test Fn, and what proved it works once detected.
+class _FnHint extends StatelessWidget {
+  const _FnHint({required this.c});
+
+  final KeyboardController c;
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final via = c.fnSignal.value;
+      final done = via != null;
+      final color = done ? AppColors.pass : AppColors.primary;
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          children: [
+            Icon(done ? Icons.check_circle_rounded : Icons.keyboard_command_key_rounded, size: 18, color: color),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                done
+                    ? 'Fn works: detected Fn + $via.'
+                    : 'Fn key: hold Fn and press a function key that has a picture on it, such as '
+                        'Fn + volume up / down, Fn + mute or Fn + airplane mode. Fn sends nothing by itself, '
+                        'so the app detects it through that combination. If none of those keys exist, '
+                        'click Fn to confirm it by hand.',
+                style: TextStyle(
+                  color: done ? AppColors.pass : AppColors.text,
+                  fontSize: 12.5,
+                  height: 1.4,
+                  fontWeight: done ? FontWeight.w700 : FontWeight.w400,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+}
+
 /// Total key units per row; rows are scaled/padded to this so they line up.
 const _rowUnits = 15.0;
 
@@ -253,7 +300,9 @@ class _KeyCap extends StatelessWidget {
       };
 
       return PopupMenuButton<_KeyAction>(
-        tooltip: def.manualOnly ? '${def.label}: sends no signal to Windows, click to confirm by hand' : 'Mark ${def.label} manually',
+        tooltip: def.manualOnly
+            ? '${def.label}: hold it and press volume / mute / airplane mode to detect it, or click to confirm by hand'
+            : 'Mark ${def.label} manually',
         padding: EdgeInsets.zero,
         position: PopupMenuPosition.under,
         color: AppColors.navySoft,

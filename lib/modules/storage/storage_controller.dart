@@ -43,9 +43,11 @@ class StorageController extends GetxController {
       toolMissing.value = true;
       error.value = '$e';
       _app.setStatus(ModuleId.storage, TestStatus.notTested);
+      _app.skipSoon(ModuleId.storage);
     } catch (e) {
       error.value = '$e';
       _app.setStatus(ModuleId.storage, TestStatus.notTested);
+      _app.skipSoon(ModuleId.storage);
     } finally {
       isRunning.value = false;
     }

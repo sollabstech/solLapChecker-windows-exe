@@ -462,7 +462,7 @@ pw.Widget _howToRead(ReportData r) => pw.Container(
           pw.SizedBox(height: 4),
           pw.Text(
             'Health score: weighted result of the completed tests (battery 15, storage 20, processor 15, graphics 10, '
-            'keyboard 10, display 10, touchpad, camera, speakers and microphone 5 each). Grade A is 90 and above, B 75, C 60, '
+            'keyboard, touchpad, camera and display 10 each). Grade A is 90 and above, B 75, C 60, '
             'D below. A failed test limits the grade to C, and Grade A needs every test completed.',
             style: const pw.TextStyle(fontSize: 8, color: _C.muted, lineSpacing: 2),
           ),

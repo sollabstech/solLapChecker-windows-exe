@@ -3,9 +3,7 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
-  audioplayers_windows
   camera_windows
-  record_windows
   screen_retriever_windows
   window_manager
 )

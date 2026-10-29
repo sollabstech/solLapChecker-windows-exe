@@ -44,11 +44,11 @@ void main() {
     expect(find.text('Stop'), findsNothing);
 
     // choose 5 minutes, start
-    await tester.tap(find.text('5 min'));
+    await tester.tap(find.text('30 min'));
     await tester.pump();
     await tester.tap(find.text('Start stress test'));
     await tester.pump();
-    expect(helper.startedArgs.single, contains('300'));
+    expect(helper.startedArgs.single, contains('1800'));
 
     final s = helper.sessions.single;
     s.emit(const StressStarted(durationSec: 300, limitC: 95, device: 'Intel Core i7'));
@@ -57,11 +57,13 @@ void main() {
     }
     await tester.pump(const Duration(milliseconds: 50));
 
-    // live figures + the global Stop bar (visible regardless of scroll position)
-    expect(find.text('75'), findsWidgets); // current temp 55+4*5
+    // countdown instead of temperatures + the global Stop bar (visible regardless of scroll position)
+    expect(find.text('4:56'), findsOneWidget); // 300 s planned, 4 s done
+    expect(find.text('Time left'), findsOneWidget);
+    expect(find.text('Temperature'), findsNothing);
+    expect(find.text('75'), findsNothing); // the current temperature is not shown
     expect(find.text('Stop'), findsOneWidget); // ActiveTestBar
     expect(find.text('Stop test'), findsOneWidget); // setup card
-    expect(find.textContaining('Elapsed 0:04'), findsOneWidget);
     expect(find.text('Checking…'), findsOneWidget);
     expect(app.statusOf(ModuleId.cpu), TestStatus.running);
 
@@ -76,6 +78,26 @@ void main() {
     expect(find.text('Run again'), findsOneWidget);
     expect(find.text('Stop'), findsNothing);
     expect(app.statusOf(ModuleId.cpu), TestStatus.pass);
+  });
+
+  testWidgets('CPU screen: a short run counts down in seconds', (tester) async {
+    _bigWindow(tester);
+    final helper = FakeHelper();
+    Get.put(CpuController(helper)..onInit());
+
+    await tester.pumpWidget(_host(const CpuView()));
+    await tester.pump();
+    Get.find<CpuController>().start(seconds: 10);
+    await tester.pump();
+    expect(find.text('10 s'), findsOneWidget);
+
+    final s = helper.sessions.single;
+    s.emit(StressSampled(const StressSample(t: 1, tempC: 80, clockMhz: 4000, loadPct: 100)));
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('9 s'), findsOneWidget);
+
+    await s.stop();
+    await tester.pump(const Duration(milliseconds: 50));
   });
 
   testWidgets('CPU screen: Stop button ends the run and leaves no verdict', (tester) async {
@@ -99,7 +121,7 @@ void main() {
     expect(app.statusOf(ModuleId.cpu), TestStatus.notTested);
   });
 
-  testWidgets('CPU screen: a safety stop is shown prominently and fails the test', (tester) async {
+  testWidgets('CPU screen: a safety stop is shown prominently and is a warning', (tester) async {
     _bigWindow(tester);
     final helper = FakeHelper();
     Get.put(CpuController(helper)..onInit());
@@ -117,8 +139,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
 
     expect(find.text('Stopped for safety'), findsOneWidget);
-    expect(find.textContaining('Reached 96 °C'), findsOneWidget);
-    expect(app.statusOf(ModuleId.cpu), TestStatus.fail);
+    expect(find.textContaining('got too hot'), findsOneWidget);
+    expect(find.textContaining('96 °C'), findsNothing); // no temperature on the CPU screen
+    expect(app.statusOf(ModuleId.cpu), TestStatus.warning);
   });
 
   testWidgets('CPU screen: no temperature sensor explains the PawnIO driver', (tester) async {
@@ -156,6 +179,39 @@ void main() {
     const igpu = GpuDevice(index: 0, name: 'Intel(R) UHD Graphics', integrated: true, hasTempSensor: true);
     const dgpu = GpuDevice(index: 1, name: 'NVIDIA GeForce RTX 3060', integrated: false, dedicatedMb: 6144, hasTempSensor: true, hasOwnTempSensor: true);
 
+    testWidgets('an integrated GPU shows no temperatures at all, just the countdown', (tester) async {
+      _bigWindow(tester);
+      final helper = FakeHelper(gpus: [igpu]);
+      Get.put(GpuController(helper)..onInit());
+
+      await tester.pumpWidget(_host(const GpuView()));
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.tap(find.text('Test'));
+      await tester.pump();
+
+      final s = helper.sessions.single;
+      s.emit(const StressStarted(durationSec: 10, limitC: 95, device: 'Intel(R) UHD Graphics', tempSource: 'cpu-package'));
+      s.emit(StressSampled(const StressSample(t: 1, cpuTempC: 97)));
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(find.text('9 s'), findsOneWidget);
+      for (final label in ['Temperature', 'GPU temperature', 'CPU package', 'CPU max', 'Max']) {
+        expect(find.text(label), findsNothing, reason: label);
+      }
+      expect(find.text('97'), findsNothing);
+
+      s.emit(const StressEnded(StressSummary(
+          test: 'gpu', reason: StressEndReason.completed, maxCpuTempC: 98, elapsedSec: 10)));
+      await s.finish();
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(find.text('Passed'), findsOneWidget);
+      expect(find.textContaining('98'), findsNothing); // the CPU's peak is not shown
+      expect(find.textContaining('CPU package'), findsNothing);
+      expect(Get.find<GpuController>().results[0]!.status, TestStatus.pass);
+    });
+
     testWidgets('lists integrated and dedicated GPUs, each with its own Test button', (tester) async {
       _bigWindow(tester);
       final helper = FakeHelper(gpus: [igpu, dgpu]);
@@ -168,13 +224,16 @@ void main() {
       expect(find.text('NVIDIA GeForce RTX 3060'), findsOneWidget);
       expect(find.textContaining('Integrated GPU'), findsOneWidget);
       expect(find.textContaining('Dedicated GPU'), findsOneWidget);
-      expect(find.textContaining('temperature from CPU package'), findsOneWidget);
+      expect(find.textContaining('no temperature sensor (CPU watched for safety)'), findsOneWidget);
       expect(find.text('Test'), findsNWidgets(2));
       expect(find.text('Test all GPUs'), findsOneWidget);
+      expect(find.text('10 min'), findsOneWidget);
+      expect(find.text('30 min'), findsOneWidget);
+      expect(find.text('1 hour'), findsOneWidget);
 
       await tester.tap(find.text('Test').last);
       await tester.pump();
-      expect(helper.startedArgs.single, ['gpu-stress', '--gpu', '1', '--duration', '60', '--limit', '95']);
+      expect(helper.startedArgs.single, ['gpu-stress', '--gpu', '1', '--duration', '600', '--limit', '95']);
 
       // while running: other Test buttons disabled, Stop available
       expect(find.text('Stop'), findsWidgets);

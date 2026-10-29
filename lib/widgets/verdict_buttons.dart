@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../app/theme.dart';
 
 /// Two big buttons for "it works" / "it does not", used by the tests that
-/// need a human to judge the result (camera, speakers, microphone, display).
+/// need a human to judge the result (camera, display).
 class VerdictButtons extends StatelessWidget {
   const VerdictButtons({
     super.key,

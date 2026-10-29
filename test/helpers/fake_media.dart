@@ -1,76 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:sollapchecker/core/media/audio_output.dart';
 import 'package:sollapchecker/core/media/camera_service.dart';
-import 'package:sollapchecker/core/media/mic_recorder.dart';
+import 'package:sollapchecker/core/media/face_detector.dart';
 import 'package:sollapchecker/core/media/window_control.dart';
 import 'package:sollapchecker/core/report/file_opener.dart';
-
-class FakeAudioOutput implements AudioOutput {
-  final played = <String>[];
-  final _done = StreamController<void>.broadcast();
-  bool stopped = false;
-
-  /// When true, playback "finishes" by itself right after it starts.
-  bool autoComplete = true;
-
-  @override
-  Stream<void> get completed => _done.stream;
-
-  void finish() => _done.add(null);
-
-  @override
-  Future<void> playFile(String path) async {
-    played.add(path);
-    stopped = false;
-    if (autoComplete) Future<void>.delayed(const Duration(milliseconds: 5), finish);
-  }
-
-  @override
-  Future<void> stop() async => stopped = true;
-
-  @override
-  Future<void> dispose() async {}
-}
-
-class FakeMic implements MicRecorder {
-  FakeMic({this.permission = true, this.names = const ['Microphone Array (Realtek)'], this.failStart});
-
-  bool permission;
-  final List<String> names;
-  final String? failStart;
-  final _levels = StreamController<double>.broadcast();
-  String? startedPath;
-  bool recording = false;
-
-  @override
-  Stream<double> get levels => _levels.stream;
-
-  void level(double db) => _levels.add(db);
-
-  @override
-  Future<bool> hasPermission() async => permission;
-
-  @override
-  Future<List<String>> deviceNames() async => names;
-
-  @override
-  Future<void> start(String path) async {
-    if (failStart != null) throw StateError(failStart!);
-    startedPath = path;
-    recording = true;
-  }
-
-  @override
-  Future<String?> stop() async {
-    recording = false;
-    return startedPath;
-  }
-
-  @override
-  Future<void> dispose() async {}
-}
 
 class FakeCameraSession implements CameraSession {
   bool disposed = false;
@@ -80,6 +14,11 @@ class FakeCameraSession implements CameraSession {
 
   @override
   Widget buildPreview() => const ColoredBox(color: Color(0xFF334455), child: Center(child: Text('PREVIEW')));
+
+  int captures = 0;
+
+  @override
+  Future<String> capture() async => 'fake_frame_${captures++}.jpg';
 
   @override
   Future<void> dispose() async => disposed = true;
@@ -101,6 +40,25 @@ class FakeCameraService implements CameraService {
     final s = FakeCameraSession();
     sessions.add(s);
     return s;
+  }
+}
+
+/// Answers face counts from [results] in order (an exception is thrown).
+/// With nothing left to answer it never completes, like a user who has not
+/// looked at the camera yet, so no timers are left behind in widget tests.
+class FakeFaceDetector implements FaceDetector {
+  FakeFaceDetector([List<Object> results = const []]) : _results = [...results];
+
+  final List<Object> _results;
+  final seen = <String>[];
+
+  @override
+  Future<int> countFaces(String imagePath) {
+    seen.add(imagePath);
+    if (_results.isEmpty) return Completer<int>().future;
+    final r = _results.removeAt(0);
+    if (r is int) return Future.value(r);
+    return Future.error(r);
   }
 }
 

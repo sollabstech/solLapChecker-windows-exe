@@ -37,6 +37,7 @@ class BatteryController extends GetxController {
     } catch (e) {
       error.value = '$e';
       _app.setStatus(ModuleId.battery, TestStatus.notTested);
+      _app.skipSoon(ModuleId.battery);
     } finally {
       isRunning.value = false;
     }

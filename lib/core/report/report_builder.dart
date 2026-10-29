@@ -19,8 +19,6 @@ class ReportInputs {
     this.keyboard,
     this.touchpad,
     this.webcam,
-    this.speaker,
-    this.microphone,
     this.display,
   });
 
@@ -35,8 +33,6 @@ class ReportInputs {
   final Map<String, dynamic>? keyboard;
   final Map<String, dynamic>? touchpad;
   final Map<String, dynamic>? webcam;
-  final Map<String, dynamic>? speaker;
-  final Map<String, dynamic>? microphone;
   final Map<String, dynamic>? display;
 }
 
@@ -61,8 +57,6 @@ class ReportBuilder {
       _keyboard(i),
       _touchpad(i),
       _webcam(i),
-      _speaker(i),
-      _microphone(i),
       _display(i),
     ];
 
@@ -257,7 +251,6 @@ class ReportBuilder {
       'move': 'Move cursor',
       'leftClick': 'Left click',
       'rightClick': 'Right click',
-      'tap': 'Tap to click',
       'scroll': 'Two-finger scroll',
     };
     String word(Object? s) => switch (s) {
@@ -288,39 +281,7 @@ class ReportBuilder {
     return _make(i, ModuleId.webcam, '$result · ${w['resolution'] ?? 'unknown'}', [
       ReportDetail('Camera', '${w['camera'] ?? 'Unknown'}'),
       ReportDetail('Resolution', '${w['resolution'] ?? 'Unknown'}'),
-    ]);
-  }
-
-  static ReportTest _speaker(ReportInputs i) {
-    final s = i.speaker;
-    if (s == null) return _make(i, ModuleId.speaker, '');
-    String word(Object? v) => v == null ? 'not answered' : '$v';
-    return _make(
-      i,
-      ModuleId.speaker,
-      'Left ${word(s['left'])} · Right ${word(s['right'])} · Both ${word(s['both'])}',
-      [
-        ReportDetail('Left channel', word(s['left'])),
-        ReportDetail('Right channel', word(s['right'])),
-        ReportDetail('Both channels', word(s['both'])),
-      ],
-    );
-  }
-
-  static ReportTest _microphone(ReportInputs i) {
-    final m = i.microphone;
-    if (m == null) return _make(i, ModuleId.microphone, '');
-    final result = switch (m['result']) {
-      'heard' => 'Recording heard',
-      'not heard' => 'Recording not heard',
-      _ => 'Not judged',
-    };
-    final peak = (m['peakDb'] as num?)?.toDouble();
-    final devices = (m['devices'] as List? ?? const []).join(', ');
-    return _make(i, ModuleId.microphone, result, [
-      if (devices.isNotEmpty) ReportDetail('Microphone', devices),
-      ReportDetail('Peak level', peak == null ? 'N/A' : '${peak.toStringAsFixed(0)} dB'),
-      ReportDetail('Signal picked up', m['signalDetected'] == null ? 'N/A' : (m['signalDetected'] == true ? 'Yes' : 'No')),
+      if (w['faceDetected'] == true) const ReportDetail('Check', 'Face detected automatically'),
     ]);
   }
 

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:sollapchecker/core/input/input_device.dart';
 import 'package:sollapchecker/core/input/raw_input_event.dart';
 import 'package:sollapchecker/core/input/raw_input_service.dart';
@@ -52,6 +54,52 @@ const usbMouse = InputDevice(
 );
 
 const synthetic = InputDevice(handle: 0, kind: InputDeviceKind.mouse, path: '', bus: DeviceBus.virtual);
+
+/// Contact reports of the built-in precision touchpad (I2C-HID).
+const precisionTouchpad = InputDevice(
+  handle: 500,
+  kind: InputDeviceKind.hid,
+  path: r'\\?\HID#CUST0001&Col02#5&4d18aa1&0&0001#{4d1e55b2-f16f-11cf-88cb-001111000030}',
+  bus: DeviceBus.internalHid,
+  usagePage: hidPageDigitizer,
+  usage: hidUsageTouchpad,
+);
+
+/// The built-in keyboard's media-key collection (hard-wired USB controller).
+const mediaKeys = InputDevice(
+  handle: 600,
+  kind: InputDeviceKind.hid,
+  path: r'\\?\HID#VID_1038&PID_1122&MI_01#7&2182bd82&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}',
+  bus: DeviceBus.usbInternal,
+  usagePage: hidPageConsumer,
+  usage: hidUsageConsumerControl,
+);
+
+/// Media keys of a plugged-in USB keyboard.
+const externalMediaKeys = InputDevice(
+  handle: 700,
+  kind: InputDeviceKind.hid,
+  path: r'\\?\HID#VID_046D&PID_C31C&MI_01&Col02#7&1&0&0001#{4d1e55b2-f16f-11cf-88cb-001111000030}',
+  bus: DeviceBus.usbExternal,
+  usagePage: hidPageConsumer,
+  usage: hidUsageConsumerControl,
+);
+
+/// The laptop's airplane-mode button (ACPI0011 "wireless radio controls").
+const airplaneButton = InputDevice(
+  handle: 800,
+  kind: InputDeviceKind.hid,
+  path: r'\\?\HID#ACPI0011#3&30be55&0&0000#{4d1e55b2-f16f-11cf-88cb-001111000030}',
+  bus: DeviceBus.internalHid,
+  usagePage: hidPageGenericDesktop,
+  usage: hidUsageRadioControls,
+);
+
+/// One HID report (first byte = report ID) from [device].
+InputEvent hidEvent(InputDevice device, List<int> report) => InputEvent(
+      device,
+      RawHidPacket(deviceHandle: device.handle, inForeground: true, reports: [Uint8List.fromList(report)]),
+    );
 
 /// A key press (make) or release (break) from [device].
 InputEvent keyEvent(InputDevice device, int scan, {bool extended = false, bool up = false, int vKey = 0x41}) =>

@@ -47,6 +47,9 @@ class KeyboardController extends GetxController {
   final otherKeys = <String>{}.obs;
   final lastKeyId = RxnString();
 
+  /// The Fn combination that proved Fn works, e.g. "Volume up".
+  final fnSignal = RxnString();
+
   final listening = false.obs;
   final error = RxnString();
   final finished = false.obs;
@@ -87,6 +90,19 @@ class KeyboardController extends GetxController {
 
   void _onEvent(InputEvent e) {
     final p = e.packet;
+
+    // Media / airplane / sleep buttons arrive as their own HID collections.
+    // From the laptop itself they can only come from Fn + a function key.
+    if (p is RawHidPacket) {
+      if (e.device.isFunctionKeySource && e.device.countedByDefault && p.hasActivity) {
+        _fnDetected(switch ((e.device.usagePage, e.device.usage)) {
+          (hidPageGenericDesktop, hidUsageRadioControls) => 'Airplane mode',
+          (hidPageGenericDesktop, hidUsageSystemControl) => 'Sleep / power',
+          _ => 'Media / volume key',
+        });
+      }
+      return;
+    }
     if (p is! RawKeyPacket || e.device.kind != InputDeviceKind.keyboard) return;
     if (p.isBreak || p.isE1) return; // key-up, and Pause (E1 sequence)
     if (p.vKey == 0xFF) return; // fake scan codes Windows injects (e.g. around PrintScreen)
@@ -106,6 +122,11 @@ class KeyboardController extends GetxController {
 
     final def = KeyboardLayout.find(p.makeCode, extended: p.isExtended);
     if (def == null) {
+      final fn = KeyboardLayout.fnSignalName(p.makeCode, extended: p.isExtended, vKey: p.vKey);
+      if (fn != null) {
+        _fnDetected(fn);
+        return;
+      }
       otherKeys.add('0x${p.makeCode.toRadixString(16).toUpperCase().padLeft(2, '0')}${p.isExtended ? ' (E0)' : ''}');
       return;
     }
@@ -115,9 +136,19 @@ class KeyboardController extends GetxController {
     _afterChange();
   }
 
+  void _fnDetected(String via) {
+    fnSignal.value = via;
+    lastKeyId.value = KeyboardLayout.fnId;
+    keys[KeyboardLayout.fnId] = KeyState.pressed;
+    _afterChange();
+  }
+
   /// Include or exclude a keyboard from the test (overrides the automatic decision).
+  /// External keyboards cannot be counted.
   void setCounted(int handle, bool counted) {
-    keyboards[handle]?.counted = counted;
+    final kb = keyboards[handle];
+    if (kb == null || (counted && !kb.device.canBeCounted)) return;
+    kb.counted = counted;
     keyboards.refresh();
   }
 
@@ -143,6 +174,7 @@ class KeyboardController extends GetxController {
     ignoredPresses.value = 0;
     otherKeys.clear();
     lastKeyId.value = null;
+    fnSignal.value = null;
     finished.value = false;
     _app.setStatus(ModuleId.keyboard, listening.value ? TestStatus.running : TestStatus.notTested);
   }
@@ -166,6 +198,8 @@ class KeyboardController extends GetxController {
       finished.value = false;
       if (listening.value) _app.setStatus(ModuleId.keyboard, TestStatus.running);
     }
+    // In the guided run, a keyboard with every key working finishes by itself.
+    if (_app.wizardActive.value && listening.value && testedCount == total) finish();
   }
 
   /// Lists of key labels for the report (Phase 6).
@@ -175,6 +209,7 @@ class KeyboardController extends GetxController {
         'failed': [for (final k in KeyboardLayout.all) if (keys[k.id] == KeyState.failed) k.label],
         'untested': [for (final k in KeyboardLayout.all) if (keys[k.id] == KeyState.untested) k.label],
         'manuallyConfirmed': [for (final k in KeyboardLayout.all) if (keys[k.id] == KeyState.manualPass) k.label],
+        'fnDetectedVia': fnSignal.value,
         'ignoredExternalPresses': ignoredPresses.value,
         'devices': [
           for (final kb in keyboards.values)

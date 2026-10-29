@@ -65,6 +65,11 @@ record SampleEvent(
     public string Type => "sample";
 }
 
+record FaceEvent(int Faces, int Width, int Height)
+{
+    public string Type => "face";
+}
+
 record WarningEvent(string Message)
 {
     public string Type => "warning";

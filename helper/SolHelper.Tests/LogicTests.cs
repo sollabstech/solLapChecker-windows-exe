@@ -154,37 +154,81 @@ public class ThrottleDetectorTests
 public class SafetyGuardTests
 {
     [Fact]
-    public void Stops_at_exactly_the_limit()
+    public void A_gpu_stops_at_exactly_the_limit()
     {
         var g = new SafetyGuard(95);
-        Assert.Null(g.Check(94.9f));
-        Assert.NotNull(g.Check(95f));
+        Assert.Null(g.Check(94.9f, watchedIsCpu: false));
+        Assert.NotNull(g.Check(95f, watchedIsCpu: false));
     }
 
     [Fact]
-    public void Another_part_reaching_the_limit_also_stops_the_test()
+    public void Another_gpu_reaching_the_limit_also_stops_the_test()
     {
         var g = new SafetyGuard(95);
-        var reason = g.Check(60f, 96f);
+        var reason = g.Check(80f, watchedIsCpu: true, cpuC: 80f, gpuC: 96f);
         Assert.NotNull(reason);
         Assert.Contains("96", reason);
+    }
+
+    [Fact]
+    public void A_cpu_boosting_to_95_100_degrees_is_not_stopped()
+    {
+        var g = new SafetyGuard(95);
+        // A laptop CPU at TjMax for a while, then settling: normal behaviour.
+        for (var i = 0; i < SafetyGuard.CpuSustainSeconds - 1; i++) Assert.Null(g.Check(100f, watchedIsCpu: true));
+        for (var i = 0; i < 60; i++) Assert.Null(g.Check(94f, watchedIsCpu: true));
+    }
+
+    [Fact]
+    public void A_cpu_that_stays_at_the_sustained_limit_is_stopped()
+    {
+        var g = new SafetyGuard(95);
+        for (var i = 0; i < SafetyGuard.CpuSustainSeconds - 1; i++) Assert.Null(g.Check(99f, watchedIsCpu: true));
+        var reason = g.Check(99f, watchedIsCpu: true);
+        Assert.NotNull(reason);
+        Assert.Contains("processor stayed", reason);
+    }
+
+    [Fact]
+    public void A_cooler_second_resets_the_sustained_count()
+    {
+        var g = new SafetyGuard(95);
+        for (var round = 0; round < 5; round++)
+        {
+            for (var i = 0; i < SafetyGuard.CpuSustainSeconds - 1; i++) Assert.Null(g.Check(99f, watchedIsCpu: true));
+            Assert.Null(g.Check(96f, watchedIsCpu: true));
+        }
+    }
+
+    [Fact]
+    public void A_cpu_at_the_hard_limit_stops_at_once()
+    {
+        var g = new SafetyGuard(95);
+        Assert.NotNull(g.Check(SafetyGuard.CpuHardLimitC, watchedIsCpu: true));
+    }
+
+    [Fact]
+    public void During_a_gpu_test_the_cpu_follows_the_cpu_rule()
+    {
+        var g = new SafetyGuard(95);
+        Assert.Null(g.Check(70f, watchedIsCpu: false, cpuC: 99f, gpuC: 70f));
     }
 
     [Fact]
     public void Losing_the_sensor_stops_the_test_after_five_blind_seconds()
     {
         var g = new SafetyGuard(95);
-        for (var i = 0; i < SafetyGuard.MaxBlindSeconds - 1; i++) Assert.Null(g.Check(null));
-        Assert.NotNull(g.Check(null));
+        for (var i = 0; i < SafetyGuard.MaxBlindSeconds - 1; i++) Assert.Null(g.Check(null, watchedIsCpu: true));
+        Assert.NotNull(g.Check(null, watchedIsCpu: true));
     }
 
     [Fact]
     public void A_valid_reading_resets_the_blind_counter()
     {
         var g = new SafetyGuard(95);
-        for (var i = 0; i < 4; i++) g.Check(null);
-        Assert.Null(g.Check(70f));
-        for (var i = 0; i < 4; i++) Assert.Null(g.Check(null));
+        for (var i = 0; i < 4; i++) g.Check(null, watchedIsCpu: true);
+        Assert.Null(g.Check(70f, watchedIsCpu: true));
+        for (var i = 0; i < 4; i++) Assert.Null(g.Check(null, watchedIsCpu: true));
     }
 }
 

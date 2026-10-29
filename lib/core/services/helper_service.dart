@@ -13,6 +13,15 @@ class HelperMissingException implements Exception {
   String toString() => 'SolHelper.exe was not found. Looked in: ${searched.join(', ')}';
 }
 
+/// SolHelper could not look for faces (Windows face detection unavailable, unreadable image...).
+class FaceDetectionException implements Exception {
+  FaceDetectionException(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 /// A running SolHelper stress process. [events] ends when the process exits.
 abstract class StressSession {
   Stream<StressEvent> get events;
@@ -68,6 +77,26 @@ class SolHelperService {
       if (e is HelperInfoEvent) return e.info;
     }
     throw StateError('SolHelper returned no information (exit ${result.exitCode}). ${result.stderr}'.trim());
+  }
+
+  /// Number of faces in the image at [imagePath] (`SolHelper face-detect`).
+  Future<int> detectFaces(String imagePath) async {
+    if (!Platform.isWindows) throw UnsupportedError('Face detection requires Windows.');
+    final exe = _resolve();
+    final result = await Process.run(exe, ['face-detect', '--image', imagePath], stdoutEncoding: utf8, stderrEncoding: utf8)
+        .timeout(const Duration(seconds: 20));
+    for (final line in const LineSplitter().convert('${result.stdout}')) {
+      final Object? j;
+      try {
+        j = jsonDecode(line.trim());
+      } on FormatException {
+        continue;
+      }
+      if (j is! Map) continue;
+      if (j['type'] == 'face') return (j['faces'] as num?)?.toInt() ?? 0;
+      if (j['type'] == 'error') throw FaceDetectionException('${j['message'] ?? 'Face detection failed.'}');
+    }
+    throw FaceDetectionException('SolHelper returned no face result (exit ${result.exitCode}). ${result.stderr}'.trim());
   }
 
   /// Starts `SolHelper <args>`; the returned session streams its events.

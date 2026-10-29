@@ -68,14 +68,35 @@ void main() {
       expect(s(StressEndReason.completed, max: 80, powerLimited: true).status, TestStatus.pass);
     });
 
-    test('thermal throttling or a 90 °C peak is a warning', () {
+    test('thermal throttling is a warning; so is a 90 °C peak on a GPU', () {
       expect(s(StressEndReason.completed, max: 85, throttled: true).status, TestStatus.warning);
-      expect(s(StressEndReason.completed, max: 90).status, TestStatus.warning);
-      expect(s(StressEndReason.completed, max: 89.9).status, TestStatus.pass);
+      const gpuHot = StressSummary(test: 'gpu', reason: StressEndReason.completed, maxTempC: 90);
+      const gpuOk = StressSummary(test: 'gpu', reason: StressEndReason.completed, maxTempC: 89.9);
+      expect(gpuHot.status, TestStatus.warning);
+      expect(gpuOk.status, TestStatus.pass);
     });
 
-    test('hitting the safety limit fails; stopped or errored runs have no verdict', () {
-      expect(s(StressEndReason.safety, max: 95).status, TestStatus.fail);
+    test('a laptop CPU running at 95-100 °C under full load still passes', () {
+      expect(s(StressEndReason.completed, max: 100).status, TestStatus.pass);
+      expect(describeStressSummary(s(StressEndReason.completed, max: 99)), startsWith('Held up under full load'));
+    });
+
+    test('a hot CPU at the safety limit warns; a GPU at the limit or a dead sensor fails', () {
+      expect(s(StressEndReason.safety, max: 95).status, TestStatus.warning);
+      expect(s(StressEndReason.safety, max: 62).status, TestStatus.fail); // sensor stopped responding
+      expect(s(StressEndReason.safety).status, TestStatus.fail);
+      expect(const StressSummary(test: 'gpu', reason: StressEndReason.safety, maxTempC: 95).status, TestStatus.fail);
+      // A GPU test stopped by the CPU's heat while the GPU stayed cool warns...
+      expect(const StressSummary(test: 'gpu', reason: StressEndReason.safety, maxTempC: 72, maxCpuTempC: 95).status,
+          TestStatus.warning);
+      // ...also for an integrated GPU with no sensor of its own...
+      expect(const StressSummary(test: 'gpu', reason: StressEndReason.safety, maxCpuTempC: 95).status, TestStatus.warning);
+      // ...but not when the GPU itself is hot too.
+      expect(const StressSummary(test: 'gpu', reason: StressEndReason.safety, maxTempC: 93, maxCpuTempC: 95).status,
+          TestStatus.fail);
+    });
+
+    test('stopped or errored runs have no verdict', () {
       expect(s(StressEndReason.stopped, max: 60).status, TestStatus.notTested);
       expect(s(StressEndReason.error).status, TestStatus.notTested);
     });
@@ -85,6 +106,16 @@ void main() {
     expect(
       describeStressSummary(const StressSummary(test: 'cpu', reason: StressEndReason.safety, message: 'Reached 96 °C (limit 95 °C).')),
       contains('Reached 96'),
+    );
+    expect(
+      describeStressSummary(const StressSummary(
+          test: 'cpu', reason: StressEndReason.safety, maxTempC: 96, message: 'Reached 96 °C (limit 95 °C).')),
+      allOf(contains('Reached 96'), contains('warning, not a fault')),
+    );
+    expect(
+      describeStressSummary(const StressSummary(test: 'gpu', reason: StressEndReason.safety, maxCpuTempC: 95),
+          part: 'graphics card'),
+      contains('processor (CPU) that got this hot'),
     );
     expect(
       describeStressSummary(const StressSummary(

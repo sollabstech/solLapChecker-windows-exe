@@ -123,7 +123,7 @@ void main() {
       expect(app.runningStress, isNull);
     });
 
-    test('a safety stop fails the test', () async {
+    test('a CPU safety stop at the temperature limit is a warning', () async {
       final helper = FakeHelper();
       final cpu = CpuController(helper)..onInit();
       final app = Get.find<AppController>();
@@ -136,7 +136,7 @@ void main() {
       await s.finish();
       await run;
 
-      expect(app.statusOf(ModuleId.cpu), TestStatus.fail);
+      expect(app.statusOf(ModuleId.cpu), TestStatus.warning);
     });
 
     test('the global stop hook stops the running test', () async {
@@ -158,8 +158,9 @@ void main() {
       final cpu = CpuController(helper)..onInit();
       final run = cpu.start();
       await settle();
-      cpu.setDuration(10);
-      expect(cpu.durationMin.value, 1);
+      expect(cpu.durationMin.value, 10); // the default
+      cpu.setDuration(60);
+      expect(cpu.durationMin.value, 10);
       await cpu.stop();
       await run;
     });
@@ -189,7 +190,7 @@ void main() {
       final r1 = gpu.start(igpu);
       await finishNext(helper, done(70));
       await r1;
-      expect(helper.startedArgs.last, ['gpu-stress', '--gpu', '0', '--duration', '60', '--limit', '95']);
+      expect(helper.startedArgs.last, ['gpu-stress', '--gpu', '0', '--duration', '600', '--limit', '95']);
       expect(app.statusOf(ModuleId.gpu), TestStatus.notTested); // dedicated not tested yet
 
       final r2 = gpu.start(dgpu);
@@ -211,7 +212,24 @@ void main() {
       expect(Get.find<AppController>().statusOf(ModuleId.gpu), TestStatus.fail);
     });
 
-    test('Test all GPUs runs them in order and stops after a safety abort', () async {
+    test('Test all GPUs carries on when only the CPU got too hot', () async {
+      final helper = FakeHelper(gpus: [igpu, dgpu]);
+      final gpu = GpuController(helper)..onInit();
+      await gpu.loadInfo();
+
+      final all = gpu.startAll();
+      // Integrated GPU: no sensor of its own, stopped because the CPU package hit the limit.
+      await finishNext(helper, const StressSummary(
+          test: 'gpu', reason: StressEndReason.safety, maxCpuTempC: 95, message: 'Reached 95 °C (limit 95 °C).'));
+      await finishNext(helper, done(70));
+      await all;
+
+      expect(helper.sessions, hasLength(2));
+      expect(gpu.results[0]!.status, TestStatus.warning);
+      expect(Get.find<AppController>().statusOf(ModuleId.gpu), TestStatus.warning);
+    });
+
+    test('Test all GPUs runs them in order and stops after a GPU itself overheats', () async {
       final helper = FakeHelper(gpus: [igpu, dgpu]);
       final gpu = GpuController(helper)..onInit();
       await gpu.loadInfo();

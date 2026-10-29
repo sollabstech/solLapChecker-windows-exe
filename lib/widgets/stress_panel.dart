@@ -12,13 +12,23 @@ import 'module_scaffold.dart';
 /// Live view of a running (or finished) stress test: progress, key figures,
 /// three charts and the verdict. Used by both the CPU and GPU screens.
 class StressPanel extends StatelessWidget {
-  const StressPanel({super.key, required this.runner, required this.part, this.showClockPower = true});
+  const StressPanel({
+    super.key,
+    required this.runner,
+    required this.part,
+    this.showClockPower = true,
+    this.showTemperature = true,
+  });
 
   final StressRunner runner;
 
   /// "processor" / "graphics card": used in result wording.
   final String part;
   final bool showClockPower;
+
+  /// False: no temperature figures at all, and a large countdown instead of the
+  /// progress bar. The safety limit still applies; it is just not shown.
+  final bool showTemperature;
 
   @override
   Widget build(BuildContext context) {
@@ -30,6 +40,9 @@ class StressPanel extends StatelessWidget {
 
       if (samples.isEmpty && summary == null && !running) return const SizedBox.shrink();
 
+      // A part with no sensor of its own (integrated GPU) shows no temperatures,
+      // like the CPU screen: the CPU package is still watched for safety.
+      final showTemp = showTemperature && runner.tempSource.value != 'cpu-package';
       final temps = samples.map((s) => s.tempC).toList();
       final lastTemp = temps.isEmpty ? null : temps.last;
       final nonNull = temps.whereType<double>().toList();
@@ -41,51 +54,83 @@ class StressPanel extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (running || summary == null) _Progress(elapsed: samples.length, planned: planned),
+          if (running || summary == null)
+            showTemp
+                ? _Progress(elapsed: samples.length, planned: planned)
+                : _Countdown(elapsed: samples.length, planned: planned),
           const SizedBox(height: 16),
-          TileGrid(minTileWidth: 150, children: [
-            StatTile(
-              label: 'Temperature',
-              value: lastTemp == null ? '—' : lastTemp.toStringAsFixed(0),
-              unit: '°C',
-              color: _tempColor(lastTemp, limit),
-            ),
-            StatTile(label: 'Max', value: maxTemp == null ? '—' : maxTemp.toStringAsFixed(0), unit: '°C', color: _tempColor(maxTemp, limit)),
-            StatTile(label: 'Average', value: avgTemp == null ? '—' : avgTemp.toStringAsFixed(0), unit: '°C'),
-            if (showClockPower)
-              StatTile(label: 'Clock', value: last?.clockMhz == null ? '—' : last!.clockMhz!.toStringAsFixed(0), unit: 'MHz'),
-            StatTile(label: 'Load', value: last?.loadPct == null ? '—' : last!.loadPct!.toStringAsFixed(0), unit: '%'),
-            _ThrottleTile(summary: summary, running: running),
-          ]),
-          const SizedBox(height: 16),
-          LiveChart(
-            title: 'Temperature',
-            values: temps,
-            totalSeconds: planned,
-            minY: 20,
-            maxY: 100,
-            color: AppColors.accent,
-            current: lastTemp == null ? null : '${lastTemp.toStringAsFixed(0)} °C',
-            threshold: limit,
-            thresholdLabel: 'Safety limit ${limit.toStringAsFixed(0)} °C',
-            height: 210,
+          TileGrid(
+            minTileWidth: 150,
+            children: [
+              if (showTemp)
+                StatTile(
+                  label: 'Temperature',
+                  value: lastTemp == null ? '—' : lastTemp.toStringAsFixed(0),
+                  unit: '°C',
+                  color: _tempColor(lastTemp, limit),
+                ),
+              if (showTemp)
+                StatTile(
+                  label: 'Max',
+                  value: maxTemp == null ? '—' : maxTemp.toStringAsFixed(0),
+                  unit: '°C',
+                  color: _tempColor(maxTemp, limit),
+                ),
+              if (showTemp)
+                StatTile(label: 'Average', value: avgTemp == null ? '—' : avgTemp.toStringAsFixed(0), unit: '°C'),
+              if (showClockPower)
+                StatTile(
+                  label: 'Clock',
+                  value: last?.clockMhz == null ? '—' : last!.clockMhz!.toStringAsFixed(0),
+                  unit: 'MHz',
+                ),
+              StatTile(
+                label: 'Load',
+                value: last?.loadPct == null ? '—' : last!.loadPct!.toStringAsFixed(0),
+                unit: '%',
+              ),
+              _ThrottleTile(summary: summary, running: running),
+            ],
           ),
-          const SizedBox(height: 14),
-          LayoutBuilder(builder: (context, c) {
-            final clock = _clockChart(samples, planned);
-            final load = LiveChart(
-              title: 'Load',
-              values: samples.map((s) => s.loadPct).toList(),
+          if (showTemp) ...[
+            const SizedBox(height: 16),
+            LiveChart(
+              title: 'Temperature',
+              values: temps,
               totalSeconds: planned,
-              minY: 0,
+              minY: 20,
               maxY: 100,
-              color: AppColors.pass,
-              current: last?.loadPct == null ? null : '${last!.loadPct!.toStringAsFixed(0)} %',
-              height: 130,
-            );
-            if (c.maxWidth < 760) return Column(children: [clock, const SizedBox(height: 14), load]);
-            return Row(children: [Expanded(child: clock), const SizedBox(width: 14), Expanded(child: load)]);
-          }),
+              color: AppColors.accent,
+              current: lastTemp == null ? null : '${lastTemp.toStringAsFixed(0)} °C',
+              threshold: limit,
+              thresholdLabel: 'Safety limit ${limit.toStringAsFixed(0)} °C',
+              height: 210,
+            ),
+          ],
+          const SizedBox(height: 14),
+          LayoutBuilder(
+            builder: (context, c) {
+              final clock = _clockChart(samples, planned);
+              final load = LiveChart(
+                title: 'Load',
+                values: samples.map((s) => s.loadPct).toList(),
+                totalSeconds: planned,
+                minY: 0,
+                maxY: 100,
+                color: AppColors.pass,
+                current: last?.loadPct == null ? null : '${last!.loadPct!.toStringAsFixed(0)} %',
+                height: 130,
+              );
+              if (c.maxWidth < 760) return Column(children: [clock, const SizedBox(height: 14), load]);
+              return Row(
+                children: [
+                  Expanded(child: clock),
+                  const SizedBox(width: 14),
+                  Expanded(child: load),
+                ],
+              );
+            },
+          ),
           if (runner.warnings.isNotEmpty) ...[
             const SizedBox(height: 14),
             for (final w in runner.warnings)
@@ -96,7 +141,7 @@ class StressPanel extends StatelessWidget {
           ],
           if (summary != null) ...[
             const SizedBox(height: 16),
-            _SummaryCard(summary: summary, part: part),
+            _SummaryCard(summary: summary, part: part, showTemperature: showTemp),
           ],
         ],
       );
@@ -170,6 +215,59 @@ class _Progress extends StatelessWidget {
   }
 }
 
+/// Big "9 s" countdown with a ring that empties as the test runs.
+class _Countdown extends StatelessWidget {
+  const _Countdown({required this.elapsed, required this.planned});
+
+  final int elapsed;
+  final int planned;
+
+  @override
+  Widget build(BuildContext context) {
+    final remaining = (planned - elapsed).clamp(0, planned);
+    final left = planned <= 0 ? 0.0 : remaining / planned;
+    final text = remaining < 60 ? '$remaining s' : formatMmSs(remaining);
+    return GlassCard(
+      child: Row(
+        children: [
+          SizedBox(
+            width: 110,
+            height: 110,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                CircularProgressIndicator(
+                  value: left,
+                  strokeWidth: 9,
+                  backgroundColor: Colors.white.withValues(alpha: 0.08),
+                  color: AppColors.primary,
+                ),
+                Center(
+                  child: Text(text, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 24),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Time left', style: TextStyle(color: AppColors.muted, fontSize: 13)),
+                const SizedBox(height: 4),
+                Text(
+                  remaining == 0 ? 'Finishing…' : 'Every core is under full load',
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ThrottleTile extends StatelessWidget {
   const _ThrottleTile({required this.summary, required this.running});
 
@@ -193,25 +291,30 @@ class _ThrottleTile extends StatelessWidget {
 }
 
 class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({required this.summary, required this.part});
+  const _SummaryCard({
+    required this.summary,
+    required this.part,
+    this.showTemperature = true,
+  });
 
   final StressSummary summary;
   final String part;
+  final bool showTemperature;
 
   @override
   Widget build(BuildContext context) {
     final status = summary.status;
     final safety = summary.reason == StressEndReason.safety;
-    final color = safety ? AppColors.fail : status.color;
+    final color = status.color;
     final title = switch (summary.reason) {
       StressEndReason.safety => 'Stopped for safety',
       StressEndReason.stopped => 'Stopped early',
       StressEndReason.error => 'Test failed',
       StressEndReason.completed => switch (status) {
-          TestStatus.pass => 'Passed',
-          TestStatus.warning => 'Completed with a warning',
-          _ => 'Completed',
-        },
+        TestStatus.pass => 'Passed',
+        TestStatus.warning => 'Completed with a warning',
+        _ => 'Completed',
+      },
     };
 
     return GlassCard(
@@ -219,28 +322,34 @@ class _SummaryCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            safety ? Icons.local_fire_department_rounded : Icons.fact_check_rounded,
-            color: color,
-            size: 30,
-          ),
+          Icon(safety ? Icons.local_fire_department_rounded : Icons.fact_check_rounded, color: color, size: 30),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: color)),
+                Text(
+                  title,
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: color),
+                ),
                 const SizedBox(height: 4),
-                Text(describeStressSummary(summary, part: part), style: const TextStyle(height: 1.4, fontSize: 13.5)),
+                Text(
+                  describeStressSummary(summary, part: part, withTemperatures: showTemperature),
+                  style: const TextStyle(height: 1.4, fontSize: 13.5),
+                ),
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 22,
                   runSpacing: 4,
                   children: [
-                    if (summary.maxTempC != null) _Fact('Max', '${summary.maxTempC!.toStringAsFixed(0)} °C'),
-                    if (summary.avgTempC != null) _Fact('Average', '${summary.avgTempC!.toStringAsFixed(0)} °C'),
-                    if (summary.maxClockMhz != null) _Fact('Peak clock', '${summary.maxClockMhz!.toStringAsFixed(0)} MHz'),
-                    if (summary.minClockMhz != null) _Fact('Lowest clock', '${summary.minClockMhz!.toStringAsFixed(0)} MHz'),
+                    if (showTemperature && summary.maxTempC != null)
+                      _Fact('Max', '${summary.maxTempC!.toStringAsFixed(0)} °C'),
+                    if (showTemperature && summary.avgTempC != null)
+                      _Fact('Average', '${summary.avgTempC!.toStringAsFixed(0)} °C'),
+                    if (summary.maxClockMhz != null)
+                      _Fact('Peak clock', '${summary.maxClockMhz!.toStringAsFixed(0)} MHz'),
+                    if (summary.minClockMhz != null)
+                      _Fact('Lowest clock', '${summary.minClockMhz!.toStringAsFixed(0)} MHz'),
                     _Fact('Duration', formatMmSs(summary.elapsedSec)),
                   ],
                 ),
@@ -260,9 +369,17 @@ class _Fact extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Text.rich(
-        TextSpan(children: [
-          TextSpan(text: '$label  ', style: const TextStyle(color: AppColors.muted, fontSize: 12.5)),
-          TextSpan(text: value, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
-        ]),
-      );
+    TextSpan(
+      children: [
+        TextSpan(
+          text: '$label  ',
+          style: const TextStyle(color: AppColors.muted, fontSize: 12.5),
+        ),
+        TextSpan(
+          text: value,
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
+        ),
+      ],
+    ),
+  );
 }

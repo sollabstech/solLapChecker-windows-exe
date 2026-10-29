@@ -9,6 +9,7 @@ using SolHelper.Logic;
 //   SolHelper info                                   one "info" line, then exit
 //   SolHelper cpu-stress --duration 60 [--limit 95]  sample lines until the test ends
 //   SolHelper gpu-stress --gpu 1 --duration 60 [--limit 95]
+//   SolHelper face-detect --image frame.jpg      one "face" line, then exit
 //
 // Output: JSON lines on stdout (see Protocol.cs). Input: a line "stop" on stdin ends the
 // test early; closing stdin (the parent app exiting) does the same.
@@ -32,8 +33,10 @@ static async Task<int> Main2(string[] args)
         case "cpu-stress":
         case "gpu-stress":
             return await Stress(cmd, opts, duration, limit);
+        case "face-detect":
+            return await Face(opts);
         default:
-            Console.Error.WriteLine("Usage: SolHelper info | cpu-stress --duration N [--limit C] | gpu-stress --gpu I --duration N [--limit C]");
+            Console.Error.WriteLine("Usage: SolHelper info | cpu-stress --duration N [--limit C] | gpu-stress --gpu I --duration N [--limit C] | face-detect --image PATH");
             return 2;
     }
 }
@@ -115,6 +118,26 @@ static async Task<int> Stress(string cmd, Dictionary<string, string> opts, int d
             Protocol.Emit(new ErrorEvent("start-failed", e.Message));
             return 1;
         }
+    }
+}
+
+static async Task<int> Face(Dictionary<string, string> opts)
+{
+    if (!opts.TryGetValue("image", out var image) || !File.Exists(image))
+    {
+        Protocol.Emit(new ErrorEvent("face-image-missing", "No image to look at (--image)."));
+        return 2;
+    }
+    try
+    {
+        var (faces, width, height) = await FaceDetection.Detect(image);
+        Protocol.Emit(new FaceEvent(faces, width, height));
+        return 0;
+    }
+    catch (Exception e)
+    {
+        Protocol.Emit(new ErrorEvent("face-detect-failed", e.Message));
+        return 1;
     }
 }
 

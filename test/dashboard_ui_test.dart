@@ -91,7 +91,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(app.wizardActive.value, isTrue);
     expect(app.selected.value, ModuleId.battery);
-    expect(find.text('Guided test · Step 1 of 10'), findsOneWidget);
+    expect(find.text('Guided test · Step 1 of 8'), findsOneWidget);
 
     await tester.tap(find.text('Skip'));
     await tester.pump(const Duration(milliseconds: 300));
@@ -114,7 +114,7 @@ void main() {
     // The test list is lazily built and scrolls at this height, so check
     // the visible rows plus the controller's full state.
     expect(find.text('Not tested'), findsWidgets);
-    expect(app.countOf(TestStatus.notTested), 10);
+    expect(app.countOf(TestStatus.notTested), 8);
 
     app.setStatus(ModuleId.battery, TestStatus.pass);
     app.setStatus(ModuleId.storage, TestStatus.fail);
@@ -123,6 +123,6 @@ void main() {
     expect(find.text('Pass'), findsWidgets);
     expect(find.text('Fail'), findsWidgets);
     expect(app.finishedCount, 2);
-    expect(app.progress, closeTo(0.2, 1e-9));
+    expect(app.progress, closeTo(0.25, 1e-9)); // 2 of 8
   });
 }

@@ -117,6 +117,37 @@ void main() {
       expect(reports.error.value, contains('at least one test'));
     });
 
+    test('the end of the guided run creates and opens the report by itself', () async {
+      final saved = (await reports.autoGenerate())!;
+
+      final json = jsonDecode(File(repo.jsonPath(saved.id)).readAsStringSync()) as Map<String, dynamic>;
+      expect(json['technician'], ReportsController.automaticTechnician);
+      expect(opener.opened.single, repo.pdfPath(saved.id));
+      // The placeholder is not remembered as the technician's name.
+      expect(await repo.lastTechnician(), isEmpty);
+    });
+
+    test('the automatic report uses the remembered technician name', () async {
+      await repo.saveTechnician('Asha Rao');
+      final saved = (await reports.autoGenerate())!;
+      final json = jsonDecode(File(repo.jsonPath(saved.id)).readAsStringSync()) as Map<String, dynamic>;
+      expect(json['technician'], 'Asha Rao');
+    });
+
+    test('the guided run hands over to the report when it ends', () async {
+      app.startFullTest(); // clears the results...
+      app.setStatus(ModuleId.battery, TestStatus.pass); // ...so finish one again
+      app.wizardIndex.value = app.wizardSteps.length - 1;
+      app.nextStep();
+      // Generous: PDF building is slow while other test files run in parallel.
+      final end = DateTime.now().add(const Duration(seconds: 30));
+      while (reports.lastSaved.value == null && DateTime.now().isBefore(end)) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      expect(reports.lastSaved.value, isNotNull);
+      expect(app.selected.value, ModuleId.reports);
+    });
+
     test('generates a PDF and a JSON copy with the tests that were run', () async {
       reports.technician.value = 'Asha Rao';
       reports.customer.value = ' Mr Patel ';
@@ -259,7 +290,7 @@ void main() {
       expect(find.text('No reports yet'), findsOneWidget);
       expect(find.text('Enter the technician name to continue.'), findsOneWidget);
       expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Generate report (PDF)')).onPressed, isNull);
-      expect(find.text('2 of 10 tests completed'), findsOneWidget);
+      expect(find.text('2 of 8 tests completed'), findsOneWidget);
       expect(find.textContaining('Not tested: CPU Stress Test'), findsOneWidget);
 
       await tester.enterText(find.widgetWithText(TextField, 'Technician name *'), 'Asha Rao');

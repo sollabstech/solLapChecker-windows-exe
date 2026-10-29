@@ -113,7 +113,13 @@ class _WebcamViewState extends State<WebcamView> {
                                 ? const CircularProgressIndicator(color: AppColors.primary)
                                 : const Text('Camera is off', style: TextStyle(color: AppColors.muted)),
                           )
-                        : session.buildPreview(),
+                        : Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              session.buildPreview(),
+                              _FaceOverlay(state: c.face.value),
+                            ],
+                          ),
                   ),
                 ),
               ),
@@ -124,10 +130,30 @@ class _WebcamViewState extends State<WebcamView> {
         Center(
           child: Column(
             children: [
-              const Text(
-                'Do you see a clear, live picture of yourself?',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              Text(
+                switch (c.face.value) {
+                  FaceState.detected => 'Face detected: the camera works.',
+                  FaceState.unavailable => 'Do you see a clear, live picture of yourself?',
+                  _ => 'Look at the camera. The test passes as soon as your face is detected.',
+                },
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
               ),
+              if (c.face.value == FaceState.unavailable) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Automatic face check is not available here (${c.faceError.value ?? 'unknown reason'}). '
+                  'Judge the picture yourself.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppColors.muted, fontSize: 12.5),
+                ),
+              ],
+              if (c.face.value == FaceState.looking) ...[
+                const SizedBox(height: 6),
+                const Text(
+                  'No face available? Judge the picture yourself:',
+                  style: TextStyle(color: AppColors.muted, fontSize: 12.5),
+                ),
+              ],
               const SizedBox(height: 12),
               VerdictButtons(
                 passLabel: 'Camera works',
@@ -141,6 +167,57 @@ class _WebcamViewState extends State<WebcamView> {
         ),
       ],
     );
+  }
+}
+
+/// "Show your face" prompt while looking, a big tick once a face is seen.
+class _FaceOverlay extends StatelessWidget {
+  const _FaceOverlay({required this.state});
+
+  final FaceState state;
+
+  @override
+  Widget build(BuildContext context) {
+    switch (state) {
+      case FaceState.looking:
+        return Align(
+          alignment: Alignment.topCenter,
+          child: Container(
+            margin: const EdgeInsets.only(top: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(99),
+              border: Border.all(color: AppColors.accent.withValues(alpha: 0.7)),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.face_retouching_natural_rounded, color: AppColors.accent, size: 20),
+                SizedBox(width: 8),
+                Text('Show your face to the camera', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+              ],
+            ),
+          ),
+        );
+      case FaceState.detected:
+        return ColoredBox(
+          color: Colors.black.withValues(alpha: 0.35),
+          child: const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.check_circle_rounded, color: AppColors.pass, size: 96),
+                SizedBox(height: 8),
+                Text('Face detected', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+              ],
+            ),
+          ),
+        );
+      case FaceState.idle:
+      case FaceState.unavailable:
+        return const SizedBox.shrink();
+    }
   }
 }
 

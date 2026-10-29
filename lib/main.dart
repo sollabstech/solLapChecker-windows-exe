@@ -9,16 +9,12 @@ import 'modules/cpu/cpu_controller.dart';
 import 'modules/dashboard/dashboard_controller.dart';
 import 'modules/display/display_controller.dart';
 import 'core/input/raw_input_service.dart';
-import 'core/media/audio_output.dart';
 import 'core/media/camera_service.dart';
-import 'core/media/mic_recorder.dart';
 import 'core/media/window_control.dart';
 import 'core/report/report_repository.dart';
 import 'modules/gpu/gpu_controller.dart';
 import 'modules/keyboard/keyboard_controller.dart';
-import 'modules/microphone/microphone_controller.dart';
 import 'modules/reports/reports_controller.dart';
-import 'modules/speaker/speaker_controller.dart';
 import 'modules/storage/storage_controller.dart';
 import 'modules/touchpad/touchpad_controller.dart';
 import 'modules/webcam/webcam_controller.dart';
@@ -71,8 +67,6 @@ class SolLapCheckerApp extends StatelessWidget {
         Get.put(KeyboardController(input), permanent: true);
         Get.put(TouchpadController(input), permanent: true);
         Get.put(WebcamController(CameraPackageService()), permanent: true);
-        Get.put(SpeakerController(AudioPlayersOutput()), permanent: true);
-        Get.put(MicrophoneController(RecordPackageMic(), AudioPlayersOutput()), permanent: true);
         Get.put(DisplayController(WindowManagerControl()), permanent: true);
         Get.put(ReportsController(reports), permanent: true);
       }),

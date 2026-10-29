@@ -76,10 +76,16 @@ class InputDevicePanel extends StatelessWidget {
                     Text('${r.events}', style: const TextStyle(color: AppColors.muted, fontSize: 12)),
                     const SizedBox(width: 10),
                     Tooltip(
-                      message: r.counted
-                          ? 'Counted in the test. Turn off to ignore this device.'
-                          : 'Ignored. Turn on if this is the laptop\'s own device.',
-                      child: Switch(value: r.counted, onChanged: (v) => onToggle(r.device.handle, v)),
+                      message: !r.device.canBeCounted
+                          ? 'External device: always ignored.'
+                          : r.counted
+                              ? 'Counted in the test. Turn off to ignore this device.'
+                              : 'Ignored. Turn on if this is the laptop\'s own device.',
+                      child: Switch(
+                        value: r.counted,
+                        // External devices stay off: the switch is locked.
+                        onChanged: r.device.canBeCounted ? (v) => onToggle(r.device.handle, v) : null,
+                      ),
                     ),
                   ],
                 ),

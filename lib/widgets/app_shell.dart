@@ -10,10 +10,8 @@ import '../modules/dashboard/dashboard_view.dart';
 import '../modules/display/display_view.dart';
 import '../modules/gpu/gpu_view.dart';
 import '../modules/keyboard/keyboard_view.dart';
-import '../modules/microphone/microphone_view.dart';
 import '../modules/placeholder/module_placeholder_view.dart';
 import '../modules/reports/reports_view.dart';
-import '../modules/speaker/speaker_view.dart';
 import '../modules/storage/storage_view.dart';
 import '../modules/touchpad/touchpad_view.dart';
 import '../modules/webcam/webcam_view.dart';
@@ -37,8 +35,6 @@ class AppShell extends GetView<AppController> {
     ModuleId.keyboard: () => const KeyboardView(),
     ModuleId.touchpad: () => const TouchpadView(),
     ModuleId.webcam: () => const WebcamView(),
-    ModuleId.speaker: () => const SpeakerView(),
-    ModuleId.microphone: () => const MicrophoneView(),
     ModuleId.display: () => const DisplayView(),
     ModuleId.reports: () => const ReportsView(),
   };

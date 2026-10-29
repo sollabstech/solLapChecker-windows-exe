@@ -81,10 +81,36 @@ void main() {
       expect(p.inForeground, isFalse);
     });
 
-    test('short buffers and HID packets are ignored', () {
+    test('short buffers and empty or truncated HID packets are ignored', () {
       expect(parseRawInput(Uint8List(10), inForeground: true), isNull);
       expect(parseRawInput(raw(rimTypeKeyboard, 1, (_) {}, size: 30), inForeground: true), isNull);
-      expect(parseRawInput(raw(2, 1, (_) {}), inForeground: true), isNull); // RIM_TYPEHID
+      expect(parseRawInput(raw(rimTypeHid, 1, (_) {}), inForeground: true), isNull); // dwSizeHid = 0
+      final truncated = raw(rimTypeHid, 1, (d) {
+        d.setUint32(24, 16, Endian.little); // claims 2 x 16 bytes...
+        d.setUint32(28, 2, Endian.little); // ...but only 16 follow
+      });
+      expect(parseRawInput(truncated, inForeground: true), isNull);
+    });
+
+    test('HID: every report is split out; all-zero payloads are not activity', () {
+      final bytes = raw(rimTypeHid, 0x77, (d) {
+        d.setUint32(24, 3, Endian.little); // dwSizeHid
+        d.setUint32(28, 2, Endian.little); // dwCount
+        // report 1: id 1, released; report 2: id 1, usage 0xE9 (volume up)
+        for (final (i, b) in [1, 0, 0, 1, 0xE9, 0].indexed) {
+          d.setUint8(32 + i, b);
+        }
+      }, size: 24 + 8 + 6);
+      final p = parseRawInput(bytes, inForeground: true) as RawHidPacket;
+
+      expect(p.deviceHandle, 0x77);
+      expect(p.reports.map((r) => r.toList()), [
+        [1, 0, 0],
+        [1, 0xE9, 0],
+      ]);
+      expect(p.hasActivity, isTrue);
+      expect(RawHidPacket(deviceHandle: 1, inForeground: true, reports: [Uint8List.fromList([5, 0, 0])]).hasActivity,
+          isFalse);
     });
   });
 

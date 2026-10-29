@@ -127,10 +127,8 @@ void main() {
       expect(detail('cpu', 'Temperature'), 'max 84 °C · average 79 °C');
       expect(head('gpu'), '2 GPUs · max 72 °C');
       expect(head('keyboard'), '84 / 84 keys tested');
-      expect(head('touchpad'), '5 / 5 actions OK');
+      expect(head('touchpad'), '4 / 4 actions OK');
       expect(head('webcam'), 'Works · 1280 × 720');
-      expect(head('speaker'), 'Left heard · Right heard · Both heard');
-      expect(head('microphone'), 'Recording heard');
       expect(head('display'), '5 colours checked · No problems seen');
     });
 
@@ -185,7 +183,7 @@ void main() {
       final again = ReportData.fromJson(jsonDecode(jsonEncode(r.toJson())) as Map<String, dynamic>);
       expect(jsonEncode(again.toJson()), jsonEncode(r.toJson()));
       expect(again.grade, r.grade);
-      expect(again.tests.length, 10);
+      expect(again.tests.length, 8);
       expect(again.createdAt, r.createdAt);
     });
   });

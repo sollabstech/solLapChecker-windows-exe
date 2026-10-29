@@ -1,10 +1,11 @@
 using System.Diagnostics;
-using System.Numerics;
 
 namespace SolHelper.Hardware;
 
 /// <summary>
-/// Puts every logical core under full load with a tight SIMD + sqrt loop.
+/// Puts every logical core under full load with ordinary scalar floating-point
+/// and integer work, like a long render or compile. (Wide AVX loops heat a laptop
+/// CPU far beyond anything real software does, so they are not used.)
 /// Threads run slightly below normal priority so the UI stays responsive.
 /// </summary>
 sealed class CpuWorkload : IDisposable
@@ -37,23 +38,23 @@ sealed class CpuWorkload : IDisposable
 
     void Burn(float seed)
     {
-        var a = new Vector<float>(seed);
-        var b = new Vector<float>(0.9999f);
-        var c = new Vector<float>(0.0001f);
         var d = 1.0 + seed;
+        var e = 2.0 - seed;
+        var h = (ulong)(seed * 1_000_003) | 1;
 
         while (!_stop)
         {
             // Bounded recurrences: values stay finite so the ALUs never hit slow denormal/NaN paths.
             for (var i = 0; i < 200_000; i++)
             {
-                a = a * b + c;
-                b = Vector.SquareRoot(b * b + c);
-                c = (a + b) * new Vector<float>(0.5f) * new Vector<float>(0.0001f);
                 d = Math.Sqrt(d * 1.0000001 + 0.5);
+                e = e * 0.999999 + d * 1e-6;
+                h ^= h << 13;
+                h ^= h >> 7;
+                h ^= h << 17;
             }
         }
-        _sink = a[0] + b[0] + c[0] + (float)d;
+        _sink = (float)(d + e) + h % 7;
     }
 
     public void Stop()

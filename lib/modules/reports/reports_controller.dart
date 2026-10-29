@@ -14,8 +14,6 @@ import '../dashboard/dashboard_controller.dart';
 import '../display/display_controller.dart';
 import '../gpu/gpu_controller.dart';
 import '../keyboard/keyboard_controller.dart';
-import '../microphone/microphone_controller.dart';
-import '../speaker/speaker_controller.dart';
 import '../storage/storage_controller.dart';
 import '../touchpad/touchpad_controller.dart';
 import '../webcam/webcam_controller.dart';
@@ -54,6 +52,15 @@ class ReportsController extends GetxController {
   ReportPdfAssets? _assets;
 
   AppController get _app => Get.find<AppController>();
+
+  /// Printed as the technician when a guided run ends and no name was ever entered.
+  static const automaticTechnician = 'SolLapChecker (automatic)';
+
+  @override
+  void onInit() {
+    super.onInit();
+    _app.onFullTestComplete = () => autoGenerate();
+  }
 
   String get folderPath => _repo.root.path;
 
@@ -97,8 +104,6 @@ class ReportsController extends GetxController {
     final kb = find<KeyboardController>();
     final pad = find<TouchpadController>();
     final cam = find<WebcamController>();
-    final spk = find<SpeakerController>();
-    final mic = find<MicrophoneController>();
     final disp = find<DisplayController>();
 
     final system = {...?dash?.info.value?.toJson()};
@@ -118,8 +123,6 @@ class ReportsController extends GetxController {
       keyboard: kb?.toJson(),
       touchpad: pad?.toJson(),
       webcam: cam?.toJson(),
-      speaker: spk?.toJson(),
-      microphone: mic?.toJson(),
       display: disp?.toJson(),
     );
   }
@@ -150,7 +153,8 @@ class ReportsController extends GetxController {
       );
       final pdf = await _pdfFor(data);
       await _repo.save(data, pdf);
-      await _repo.saveTechnician(data.technician);
+      // The automatic placeholder is not a person: do not remember it as one.
+      if (data.technician != automaticTechnician) await _repo.saveTechnician(data.technician);
 
       final summary = ReportSummary.fromData(data, hasPdf: true);
       lastSaved.value = summary;
@@ -167,6 +171,16 @@ class ReportsController extends GetxController {
   Future<Uint8List> _pdfFor(ReportData data) async {
     _assets ??= await _loadAssets();
     return buildReportPdf(data, _assets!);
+  }
+
+  /// End of the guided run: creates the report without waiting for the form
+  /// (using the remembered technician name), then opens the PDF.
+  Future<ReportSummary?> autoGenerate() async {
+    await init();
+    if (technician.value.trim().isEmpty) technician.value = automaticTechnician;
+    final saved = await generate();
+    if (saved != null) await openPdf(saved);
+    return saved;
   }
 
   /// Opens a saved report's PDF; rebuilds it from the JSON copy if the PDF is gone.

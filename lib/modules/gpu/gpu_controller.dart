@@ -17,10 +17,10 @@ class GpuController extends GetxController {
   final SolHelperService _service;
   late final StressRunner runner;
 
-  static const durationOptions = [1, 5, 10]; // minutes
+  static const durationOptions = [10, 30, 60]; // minutes
   static const safetyLimitC = 95;
 
-  final durationMin = 1.obs;
+  final durationMin = 10.obs;
   final info = Rxn<HelperInfo>();
   final isLoadingInfo = false.obs;
   final infoError = RxnString();
@@ -63,9 +63,18 @@ class GpuController extends GetxController {
     if (!runner.isRunning.value) durationMin.value = minutes;
   }
 
-  Future<void> start(GpuDevice gpu) async {
+  /// Tests every GPU briefly on first visit while the guided wizard is active.
+  Future<void> runIfNeeded() async {
+    if (!_app.wizardActive.value || _app.statusOf(ModuleId.gpu).isFinished || runningAll.value) return;
+    await loadInfo();
+    if (gpus.isNotEmpty) await startAll(seconds: AppController.guidedStressSeconds);
+    if (!_app.statusOf(ModuleId.gpu).isFinished) _app.skipSoon(ModuleId.gpu);
+  }
+
+  /// Runs [gpu] for [seconds], or for the chosen duration when not given.
+  Future<void> start(GpuDevice gpu, {int? seconds}) async {
     if (runner.isRunning.value) return;
-    final seconds = durationMin.value * 60;
+    seconds ??= durationMin.value * 60;
     activeIndex.value = gpu.index;
     _app.setStatus(ModuleId.gpu, TestStatus.running);
 
@@ -80,15 +89,17 @@ class GpuController extends GetxController {
     _refreshStatus();
   }
 
-  /// Tests every detected GPU one after another (stops at the first abort).
-  Future<void> startAll() async {
+  /// Tests every detected GPU one after another. Stops early only when a GPU
+  /// itself fails; a stop caused by CPU heat moves on to the next GPU (the
+  /// safety limit still protects it).
+  Future<void> startAll({int? seconds}) async {
     if (runner.isRunning.value || runningAll.value) return;
     runningAll.value = true;
     try {
       for (final gpu in gpus) {
-        await start(gpu);
+        await start(gpu, seconds: seconds);
         final r = results[gpu.index];
-        if (r == null || r.reason == StressEndReason.safety) break;
+        if (r == null || r.status == TestStatus.fail) break;
       }
     } finally {
       runningAll.value = false;

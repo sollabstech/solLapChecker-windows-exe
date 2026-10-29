@@ -17,10 +17,10 @@ class CpuController extends GetxController {
   final SolHelperService _service;
   late final StressRunner runner;
 
-  static const durationOptions = [1, 5, 10]; // minutes
+  static const durationOptions = [10, 30, 60]; // minutes
   static const safetyLimitC = 95;
 
-  final durationMin = 1.obs;
+  final durationMin = 10.obs;
   final info = Rxn<HelperInfo>();
 
   AppController get _app => Get.find<AppController>();
@@ -45,9 +45,18 @@ class CpuController extends GetxController {
     if (!runner.isRunning.value) durationMin.value = minutes;
   }
 
-  Future<void> start() async {
+  /// Starts a short run on first visit while the guided wizard is active.
+  Future<void> runIfNeeded() async {
+    if (!_app.wizardActive.value || _app.statusOf(ModuleId.cpu).isFinished || runner.isRunning.value) return;
+    await loadInfo();
+    await start(seconds: AppController.guidedStressSeconds);
+    if (!_app.statusOf(ModuleId.cpu).isFinished) _app.skipSoon(ModuleId.cpu);
+  }
+
+  /// Runs for [seconds], or for the chosen duration when not given.
+  Future<void> start({int? seconds}) async {
     if (runner.isRunning.value) return;
-    final seconds = durationMin.value * 60;
+    seconds ??= durationMin.value * 60;
     _app.setStatus(ModuleId.cpu, TestStatus.running);
 
     final summary = await runner.run(

@@ -13,7 +13,6 @@ enum PadAction {
   move('Move the cursor', 'Slide one finger across the touchpad'),
   leftClick('Left click', 'Press the left side or lower-left corner'),
   rightClick('Right click', 'Press the right side or lower-right corner'),
-  tap('Tap to click', 'Touch the pad lightly and lift, without pressing down'),
   scroll('Two-finger scroll', 'Slide two fingers up and down on the pad');
 
   const PadAction(this.title, this.hint);
@@ -42,14 +41,13 @@ class TouchpadController extends GetxController {
   /// Raw mouse counts of movement before "move" counts as detected.
   static const moveThreshold = 400;
 
-  /// A left press shorter than this is treated as a tap rather than a press.
-  /// Tap-to-click and a very quick physical click look alike; the manual
-  /// buttons cover the rare mix-up.
-  static const tapMax = Duration(milliseconds: 80);
-
-  /// Wheel input without a device handle (precision-touchpad gestures) is only
-  /// believed when no external mouse has been active for this long.
+  /// Input without a device handle (precision-touchpad cursor, clicks and
+  /// gestures) is believed when no external mouse has been active for this long...
   static const externalQuiet = Duration(seconds: 1);
+
+  /// ...or, once the precision touchpad's own contact reports have been seen,
+  /// when a finger touched the pad this recently.
+  static const touchWindow = Duration(seconds: 1);
 
   final actions = <PadAction, ActionState>{for (final a in PadAction.values) a: ActionState.pending}.obs;
   final mice = <int, SeenMouse>{}.obs;
@@ -61,8 +59,9 @@ class TouchpadController extends GetxController {
 
   StreamSubscription<InputEvent>? _sub;
   var _moveAccum = 0;
-  final _downAt = <int, DateTime>{};
   DateTime _lastExternal = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastTouch = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _touchReportsSeen = false;
 
   AppController get _app => Get.find<AppController>();
 
@@ -94,38 +93,56 @@ class TouchpadController extends GetxController {
 
   void _onEvent(InputEvent e) {
     final p = e.packet;
-    if (p is! RawMousePacket) return;
     final now = _clock();
 
-    // No device handle: synthesized input. That includes precision-touchpad
-    // scroll gestures, so accept wheel events unless an external mouse is active.
+    // Contact reports from a precision touchpad: not cursor input themselves,
+    // but they show a finger is on the built-in pad right now.
+    if (p is RawHidPacket) {
+      if (!e.device.isTouchpadDigitizer) return;
+      final pad = _seen(e.device);
+      if (pad.counted) {
+        _touchReportsSeen = true;
+        _lastTouch = now;
+      }
+      return;
+    }
+    if (p is! RawMousePacket) return;
+
+    // No device handle: synthesized input. A precision touchpad's cursor
+    // movement, clicks, taps and scrolling all arrive this way, so they count
+    // when the pad was just touched (or, if its contact reports cannot be
+    // read, when no external mouse is active).
     if (e.device.handle == 0) {
-      if (p.wheel && now.difference(_lastExternal) > externalQuiet) _detect(PadAction.scroll);
+      final fromPad = _touchReportsSeen
+          ? now.difference(_lastTouch) <= touchWindow
+          : now.difference(_lastExternal) > externalQuiet;
+      if (fromPad) _apply(p, 0, now);
       return;
     }
 
-    final mouse = mice.putIfAbsent(e.device.handle, () => SeenMouse(e.device, counted: e.device.countedByDefault));
-    mouse.events++;
-    mice.refresh();
-
+    final mouse = _seen(e.device);
     if (!mouse.counted) {
       _lastExternal = now;
       ignoredEvents.value++;
       return;
     }
+    _apply(p, e.device.handle, now);
+  }
 
+  SeenMouse _seen(InputDevice device) {
+    final mouse = mice.putIfAbsent(device.handle, () => SeenMouse(device, counted: device.countedByDefault));
+    mouse.events++;
+    mice.refresh();
+    return mouse;
+  }
+
+  /// Ticks the actions one counted mouse packet shows.
+  void _apply(RawMousePacket p, int handle, DateTime now) {
     if (p.moved) {
       _moveAccum += p.isAbsolute ? 20 : p.dx.abs() + p.dy.abs();
       if (_moveAccum >= moveThreshold) _detect(PadAction.move);
     }
-    if (p.leftDown) {
-      _downAt[e.device.handle] = now;
-      _detect(PadAction.leftClick);
-    }
-    if (p.leftUp) {
-      final down = _downAt.remove(e.device.handle);
-      if (down != null && now.difference(down) <= tapMax) _detect(PadAction.tap);
-    }
+    if (p.leftDown) _detect(PadAction.leftClick);
     if (p.rightDown) _detect(PadAction.rightClick);
     if (p.wheel) _detect(PadAction.scroll);
   }
@@ -146,8 +163,11 @@ class TouchpadController extends GetxController {
     }
   }
 
+  /// Overrides the automatic decision for a device. External mice cannot be counted.
   void setCounted(int handle, bool counted) {
-    mice[handle]?.counted = counted;
+    final m = mice[handle];
+    if (m == null || (counted && !m.device.canBeCounted)) return;
+    m.counted = counted;
     mice.refresh();
   }
 
@@ -166,7 +186,6 @@ class TouchpadController extends GetxController {
       actions[a] = ActionState.pending;
     }
     _moveAccum = 0;
-    _downAt.clear();
     ignoredEvents.value = 0;
     finished.value = false;
     _app.setStatus(ModuleId.touchpad, listening.value ? TestStatus.running : TestStatus.notTested);
@@ -189,6 +208,8 @@ class TouchpadController extends GetxController {
       finished.value = false;
       if (listening.value) _app.setStatus(ModuleId.touchpad, TestStatus.running);
     }
+    // In the guided run, a touchpad with every action working finishes by itself.
+    if (_app.wizardActive.value && listening.value && doneCount == PadAction.values.length) finish();
   }
 
   Map<String, dynamic> toJson() => {

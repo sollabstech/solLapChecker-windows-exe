@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:get/get.dart';
 
 import '../app/app_modules.dart';
@@ -7,6 +9,8 @@ import '../core/models/test_status.dart';
 /// guided "Run Full Test" wizard. Test modules report into this controller
 /// via [setStatus] and, when the wizard is active, advance it via [nextStep].
 class AppController extends GetxController {
+  AppController({this.autoAdvanceDelay = const Duration(seconds: 3)});
+
   final selected = ModuleId.dashboard.obs;
 
   /// Status per test module; the sidebar and the report both read this.
@@ -38,6 +42,72 @@ class AppController extends GetxController {
   // --- guided wizard -------------------------------------------------------
   final wizardActive = false.obs;
   final wizardIndex = 0.obs;
+
+  /// How long a finished step's result stays on screen before the guided run
+  /// moves on by itself.
+  final Duration autoAdvanceDelay;
+
+  /// Stress-test length during the guided run (the screens offer longer runs).
+  static const guidedStressSeconds = 10;
+
+  /// Called once the guided run has gone through every step (creates the report).
+  void Function()? onFullTestComplete;
+
+  Timer? _advanceTimer;
+  ModuleId? _advanceFor;
+  final _workers = <Worker>[];
+
+  @override
+  void onInit() {
+    super.onInit();
+    _workers
+      ..add(ever(statuses, (_) => _autoAdvance()))
+      ..add(ever(wizardIndex, (_) => _autoAdvance()))
+      ..add(ever(wizardActive, (_) => _autoAdvance()));
+  }
+
+  @override
+  void onClose() {
+    for (final w in _workers) {
+      w.dispose();
+    }
+    _cancelAdvance();
+    super.onClose();
+  }
+
+  /// Moves on [autoAdvanceDelay] after the current step gets a verdict.
+  void _autoAdvance() {
+    if (!wizardActive.value) return _cancelAdvance();
+    final id = currentWizardStep.id;
+    if (statusOf(id).isFinished) {
+      _scheduleAdvance(id);
+    } else if (_advanceFor == id) {
+      _cancelAdvance(); // e.g. "Run again" reopened it
+    }
+  }
+
+  /// For a step that could not run at all (no battery, missing tool, camera
+  /// error...): leave its message up briefly, then carry on with the rest.
+  void skipSoon(ModuleId id) {
+    if (wizardActive.value && currentWizardStep.id == id) _scheduleAdvance(id);
+  }
+
+  void _scheduleAdvance(ModuleId id) {
+    if (_advanceFor == id && _advanceTimer != null) return;
+    _cancelAdvance();
+    _advanceFor = id;
+    _advanceTimer = Timer(autoAdvanceDelay, () {
+      _advanceTimer = null;
+      _advanceFor = null;
+      if (wizardActive.value && currentWizardStep.id == id) nextStep();
+    });
+  }
+
+  void _cancelAdvance() {
+    _advanceTimer?.cancel();
+    _advanceTimer = null;
+    _advanceFor = null;
+  }
 
   List<ModuleDef> get wizardSteps => testModules;
 
@@ -77,15 +147,20 @@ class AppController extends GetxController {
   /// Moves to the next test, or ends the wizard after the last one.
   void nextStep() {
     if (!wizardActive.value) return;
+    _cancelAdvance();
     if (wizardIndex.value >= wizardSteps.length - 1) {
       stopWizard();
       // The guided run is over: go and create the report.
       select(ModuleId.reports);
+      onFullTestComplete?.call();
       return;
     }
     wizardIndex.value++;
     select(currentWizardStep.id);
   }
 
-  void stopWizard() => wizardActive.value = false;
+  void stopWizard() {
+    _cancelAdvance();
+    wizardActive.value = false;
+  }
 }

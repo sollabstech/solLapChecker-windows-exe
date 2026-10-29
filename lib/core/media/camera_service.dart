@@ -20,6 +20,9 @@ abstract class CameraSession {
 
   Widget buildPreview();
 
+  /// Saves one still frame as a JPEG and returns its path (the caller deletes it).
+  Future<String> capture();
+
   Future<void> dispose();
 }
 
@@ -69,6 +72,9 @@ class _PackageSession implements CameraSession {
 
   @override
   Widget buildPreview() => CameraPreview(_controller);
+
+  @override
+  Future<String> capture() async => (await _controller.takePicture()).path;
 
   @override
   Future<void> dispose() => _controller.dispose();

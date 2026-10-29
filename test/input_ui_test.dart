@@ -173,7 +173,7 @@ void main() {
       expect(pad.actions[PadAction.move], ActionState.manualPass);
       expect(find.text('Confirmed by hand'), findsOneWidget);
 
-      await tester.tap(find.byIcon(Icons.thumb_down_alt_outlined).at(4)); // scroll
+      await tester.tap(find.byIcon(Icons.thumb_down_alt_outlined).at(3)); // scroll (4th action)
       await tester.pump();
       expect(pad.actions[PadAction.scroll], ActionState.failed);
 

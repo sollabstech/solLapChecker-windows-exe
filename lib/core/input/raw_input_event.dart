@@ -25,6 +25,7 @@ const mouseMoveAbsolute = 0x0001;
 // RAWINPUTHEADER.dwType
 const rimTypeMouse = 0;
 const rimTypeKeyboard = 1;
+const rimTypeHid = 2;
 
 sealed class RawInputPacket {
   const RawInputPacket({required this.deviceHandle, required this.inForeground});
@@ -86,6 +87,20 @@ class RawMousePacket extends RawInputPacket {
   bool get moved => isAbsolute || dx != 0 || dy != 0;
 }
 
+/// Reports from a HID collection that is neither a keyboard nor a mouse:
+/// media/consumer keys, system and radio (airplane) buttons, and
+/// precision-touchpad contact reports.
+class RawHidPacket extends RawInputPacket {
+  const RawHidPacket({required super.deviceHandle, required super.inForeground, required this.reports});
+
+  /// One entry per report; each starts with the report ID when the device uses them.
+  final List<Uint8List> reports;
+
+  /// True if any report carries a non-zero byte after its first byte (the
+  /// report ID). All-zero reports are key releases or idle frames.
+  bool get hasActivity => reports.any((r) => r.skip(1).any((b) => b != 0));
+}
+
 /// Decodes the bytes of a RAWINPUT structure.
 ///
 /// Layout (x64): a 24-byte RAWINPUTHEADER { dwType, dwSize, hDevice, wParam }
@@ -119,7 +134,20 @@ RawInputPacket? parseRawInput(Uint8List bytes, {required bool inForeground, int 
         dx: d.getInt32(h + 12, Endian.little),
         dy: d.getInt32(h + 16, Endian.little),
       );
+    case rimTypeHid:
+      // RAWHID { DWORD dwSizeHid; DWORD dwCount; BYTE bRawData[dwSizeHid * dwCount]; }
+      if (bytes.length < h + 8) return null;
+      final size = d.getUint32(h, Endian.little);
+      final count = d.getUint32(h + 4, Endian.little);
+      if (size == 0 || bytes.length < h + 8 + size * count) return null;
+      return RawHidPacket(
+        deviceHandle: handle,
+        inForeground: inForeground,
+        reports: [
+          for (var i = 0; i < count; i++) Uint8List.sublistView(bytes, h + 8 + i * size, h + 8 + (i + 1) * size),
+        ],
+      );
     default:
-      return null; // RIM_TYPEHID etc.
+      return null;
   }
 }

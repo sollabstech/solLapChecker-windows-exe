@@ -50,6 +50,9 @@ class FakeHelper implements SolHelperService {
   }
 
   @override
+  Future<int> detectFaces(String imagePath) async => 0;
+
+  @override
   Future<StressSession> start(List<String> args) async {
     if (missing) throw HelperMissingException(['C:\\app\\tools\\SolHelper.exe']);
     startedArgs.add(args);

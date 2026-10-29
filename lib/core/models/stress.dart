@@ -92,21 +92,41 @@ class StressSummary {
 
   /// Verdict for the sidebar and report.
   ///
-  /// * hitting the safety limit is a fail;
+  /// * a CPU that heats up to the safety limit is a warning: laptop CPUs often
+  ///   run that hot under full load, so it is a cooling concern, not a defect.
+  ///   The same goes for a GPU test stopped because the CPU got that hot while
+  ///   the GPU itself stayed below it;
+  /// * any other safety stop (a GPU at the limit, a sensor going dark) is a fail;
   /// * a run that was stopped early or errored has no verdict;
-  /// * completing with thermal throttling or a very high peak is a warning;
+  /// * completing with thermal throttling is a warning; so is a very high peak
+  ///   on a GPU (a laptop CPU at 90-100 °C under full load is normal);
   /// * otherwise pass.
   TestStatus get status {
     switch (reason) {
       case StressEndReason.safety:
-        return TestStatus.fail;
+        return stoppedByCpuHeat ? TestStatus.warning : TestStatus.fail;
       case StressEndReason.stopped:
       case StressEndReason.error:
         return TestStatus.notTested;
       case StressEndReason.completed:
-        if (throttled || (maxTempC ?? 0) >= hotWarningC) return TestStatus.warning;
+        if (throttled || peakIsConcern) return TestStatus.warning;
         return TestStatus.pass;
     }
+  }
+
+  /// A peak of [hotWarningC] or more matters for a GPU; a laptop CPU runs that hot normally.
+  bool get peakIsConcern => test != 'cpu' && (maxTempC ?? 0) >= hotWarningC;
+
+  /// A safety stop caused by the processor's heat, not by a sensor that stopped
+  /// responding (that stop leaves every peak well under the limit):
+  /// * CPU test: the CPU itself got hot;
+  /// * GPU test: the CPU got hot while the GPU's own temperature stayed below
+  ///   the warning level (or the GPU has no sensor of its own).
+  bool get stoppedByCpuHeat {
+    if (reason != StressEndReason.safety) return false;
+    if (test == 'cpu') return (maxTempC ?? 0) >= hotWarningC;
+    if (test == 'gpu') return (maxTempC ?? 0) < hotWarningC && (maxCpuTempC ?? 0) >= hotWarningC;
+    return false;
   }
 
   StressSummary withContext({String? device, int? plannedSec}) => StressSummary(
@@ -336,11 +356,20 @@ double? _num(Object? v) => _numRaw(v)?.toDouble();
 int? _int(Object? v) => _numRaw(v)?.toInt();
 
 /// Plain-language result line shown under a finished stress test.
-String describeStressSummary(StressSummary s, {String part = 'processor'}) {
-  final max = s.maxTempC?.round();
+/// With [withTemperatures] false no temperature figure is mentioned.
+String describeStressSummary(StressSummary s, {String part = 'processor', bool withTemperatures = true}) {
+  final max = withTemperatures ? s.maxTempC?.round() : null;
   switch (s.reason) {
     case StressEndReason.safety:
-      return 'Stopped automatically to protect the laptop. ${s.message ?? ''}'.trim();
+      final stop = withTemperatures
+          ? 'Stopped automatically to protect the laptop. ${s.message ?? ''}'.trim()
+          : 'Stopped early to protect the laptop because it got too hot.';
+      if (!s.stoppedByCpuHeat) return stop;
+      final who = s.test == 'gpu'
+          ? 'It was the processor (CPU) that got this hot, not the graphics card. '
+          : 'Many laptop processors run this hot under full load. ';
+      return '$stop ${who}This is a warning, not a fault. '
+          'If it happens within seconds, cleaning the fans or renewing the thermal paste usually helps.';
     case StressEndReason.stopped:
       return 'Stopped before the end, so there is no verdict. Run the full duration for a result.';
     case StressEndReason.error:
@@ -349,8 +378,9 @@ String describeStressSummary(StressSummary s, {String part = 'processor'}) {
       if (s.throttled) {
         return s.throttleNote ?? 'The $part throttled because of heat.';
       }
-      if ((s.maxTempC ?? 0) >= StressSummary.hotWarningC) {
-        return 'The $part ran very hot (peak $max °C). Cooling may need cleaning or new thermal paste.';
+      if (s.peakIsConcern) {
+        final peak = max == null ? '' : ' (peak $max °C)';
+        return 'The $part ran very hot$peak. Cooling may need cleaning or new thermal paste.';
       }
       final limited = s.powerLimited ? ' ${s.throttleNote ?? ''}' : '';
       return 'Held up under full load${max == null ? '' : ', peak $max °C'}.$limited'.trim();

@@ -11,7 +11,11 @@ interface IStressTarget : IDisposable
 
     string DeviceName { get; }
 
-    /// <summary>Non-null when the temperature is borrowed from another sensor (integrated GPU -> CPU package).</summary>
+    /// <summary>
+    /// Non-null when the part has no temperature sensor of its own and the safety
+    /// guard watches another one instead (integrated GPU -> "cpu-package"). Its own
+    /// temperature is then reported as unknown, never as the other part's reading.
+    /// </summary>
     string? TempSource { get; }
 
     /// <summary>Temperature at which throttling counts as thermal.</summary>
@@ -39,7 +43,10 @@ sealed class CpuTarget : IStressTarget
     public string Test => "cpu";
     public string DeviceName { get; }
     public string? TempSource => null;
-    public float ThermalTempC => 80f;
+
+    // Laptop CPUs settle from boost to their sustained power limit at 85-95 °C;
+    // only a clock collapse right at TjMax is a cooling problem.
+    public float ThermalTempC => 95f;
     public string? LoadFailure => null;
 
     public void StartLoad() => _load.Start();
@@ -83,7 +90,8 @@ sealed class GpuTarget : IStressTarget
     {
         _adapter = adapter;
         _lhmName = lhmName;
-        // Integrated GPUs share the CPU die: when they expose no sensor, the package temperature is the honest proxy.
+        // Integrated GPUs share the CPU die: when they expose no sensor, the CPU
+        // package temperature is what the safety guard watches.
         _useCpuTemp = !hasOwnTemp;
     }
 
@@ -107,7 +115,7 @@ sealed class GpuTarget : IStressTarget
         var cpuTemp = SensorPicker.CpuTemperature(all);
         var gpuTemp = _lhmName is null ? null : SensorPicker.GpuTemperature(all, _lhmName);
         return new Sample(
-            _useCpuTemp ? cpuTemp : gpuTemp,
+            gpuTemp,
             _lhmName is null ? null : SensorPicker.GpuClockMhz(all, _lhmName),
             _lhmName is null ? null : SensorPicker.GpuLoad(all, _lhmName),
             _lhmName is null ? null : SensorPicker.GpuPowerWatts(all, _lhmName),
@@ -132,9 +140,14 @@ static class StressRunner
         bool pawnIo,
         CancellationToken stop)
     {
+        // The temperature that keeps the test safe: the part's own, or the stand-in
+        // sensor when it has none (see IStressTarget.TempSource).
+        float? Watched(Sample s) => target.TempSource is null ? s.Temp : s.CpuTemp;
+        var watchesCpu = target.Test == "cpu" || target.TempSource == "cpu-package";
+
         // Refuse to heat the machine if we cannot watch its temperature.
         var first = target.Read(monitor.Read());
-        if (first.Temp is null)
+        if (Watched(first) is null)
         {
             Protocol.Emit(new ErrorEvent(
                 "no-temperature",
@@ -174,7 +187,7 @@ static class StressRunner
                 load.Add(s.Load);
                 cpuTemp.Add(s.CpuTemp);
                 gpuTemp.Add(s.GpuTemp);
-                throttle.Add(t, s.Clock, s.Temp, s.Load);
+                throttle.Add(t, s.Clock, Watched(s), s.Load);
 
                 Protocol.Emit(new SampleEvent(
                     t, Protocol.R(s.Temp), Protocol.R(s.Clock), Protocol.R(s.Load),
@@ -187,7 +200,7 @@ static class StressRunner
                     break;
                 }
 
-                if (guard.Check(s.Temp, s.CpuTemp, s.GpuTemp) is { } abort)
+                if (guard.Check(Watched(s), watchesCpu, s.CpuTemp, s.GpuTemp) is { } abort)
                 {
                     reason = "safety";
                     message = abort;

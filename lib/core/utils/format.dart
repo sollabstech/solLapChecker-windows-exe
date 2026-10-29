@@ -31,3 +31,10 @@ String formatWritten(num bytes) {
 /// 9000 -> "9,000".
 String groupThousands(int v) =>
     v.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => ',');
+
+/// A stress-test length choice: 10 -> "10 min", 60 -> "1 hour", 120 -> "2 hours".
+String formatDurationChoice(int minutes) {
+  if (minutes < 60 || minutes % 60 != 0) return '$minutes min';
+  final h = minutes ~/ 60;
+  return h == 1 ? '1 hour' : '$h hours';
+}

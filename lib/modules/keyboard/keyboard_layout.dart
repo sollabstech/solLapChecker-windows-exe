@@ -14,13 +14,16 @@ class KeyDef {
   final int? scan;
   final bool extended;
 
-  /// Fn and similar keys are handled inside the keyboard controller and never
-  /// reach Windows, so they can only be confirmed by hand.
+  /// Fn is handled inside the keyboard controller and sends nothing on its own.
+  /// It is detected through what Fn + a function key sends (volume, mute,
+  /// airplane mode...), or confirmed by hand.
   final bool manualOnly;
 }
 
 class KeyboardLayout {
   KeyboardLayout._();
+
+  static const fnId = 'fn';
 
   static const _letters = {
     'Q': 0x10, 'W': 0x11, 'E': 0x12, 'R': 0x13, 'T': 0x14, 'Y': 0x15, 'U': 0x16, 'I': 0x17, 'O': 0x18, 'P': 0x19,
@@ -86,7 +89,7 @@ class KeyboardLayout {
     // Space row
     const [
       KeyDef('lctrl', 'Ctrl', width: 1.3, scan: 0x1D),
-      KeyDef('fn', 'Fn', manualOnly: true),
+      KeyDef(fnId, 'Fn', manualOnly: true),
       KeyDef('lwin', 'Win', scan: 0x5B, extended: true),
       KeyDef('lalt', 'Alt', width: 1.2, scan: 0x38),
       KeyDef('space', 'Space', width: 5.4, scan: 0x39),
@@ -119,4 +122,27 @@ class KeyboardLayout {
   static KeyDef? find(int makeCode, {required bool extended}) => _byScan[_scanKey(makeCode, extended)];
 
   static int get total => all.length;
+
+  /// Media and system keys, by virtual-key code. A laptop keyboard reaches
+  /// these through Fn + a function key, so one of them proves Fn works.
+  static const _fnVKeys = {
+    0x5F: 'Sleep',
+    0xA6: 'Browser back', 0xA7: 'Browser forward', 0xA8: 'Refresh', 0xA9: 'Browser stop',
+    0xAA: 'Search', 0xAB: 'Favorites', 0xAC: 'Browser home',
+    0xAD: 'Mute', 0xAE: 'Volume down', 0xAF: 'Volume up',
+    0xB0: 'Next track', 0xB1: 'Previous track', 0xB2: 'Stop media', 0xB3: 'Play / pause',
+    0xB4: 'Mail', 0xB5: 'Media player', 0xB6: 'App 1 (e.g. My Computer)', 0xB7: 'App 2 (e.g. Calculator)',
+  };
+
+  /// The same keys by E0-prefixed scan code, for keyboards that report no virtual key.
+  static const _fnE0Scans = {
+    0x10: 'Previous track', 0x19: 'Next track', 0x20: 'Mute', 0x21: 'Calculator', 0x22: 'Play / pause',
+    0x24: 'Stop media', 0x2E: 'Volume down', 0x30: 'Volume up', 0x32: 'Browser home', 0x5E: 'Power',
+    0x5F: 'Sleep', 0x63: 'Wake', 0x65: 'Search', 0x66: 'Favorites', 0x67: 'Refresh', 0x68: 'Browser stop',
+    0x69: 'Browser forward', 0x6A: 'Browser back', 0x6B: 'My Computer', 0x6C: 'Mail', 0x6D: 'Media player',
+  };
+
+  /// Name of the Fn-layer key a keystroke came from, or null for an ordinary key.
+  static String? fnSignalName(int makeCode, {required bool extended, required int vKey}) =>
+      _fnVKeys[vKey] ?? (extended ? _fnE0Scans[makeCode] : null);
 }

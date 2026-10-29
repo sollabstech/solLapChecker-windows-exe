@@ -10,8 +10,6 @@ enum ModuleId {
   keyboard,
   touchpad,
   webcam,
-  speaker,
-  microphone,
   display,
   reports,
 }
@@ -104,22 +102,8 @@ const testModules = <ModuleDef>[
   ModuleDef(
     id: ModuleId.webcam,
     title: 'Webcam Test',
-    subtitle: 'Live preview',
+    subtitle: 'Live preview and face check',
     icon: Icons.videocam_rounded,
-    phase: 5,
-  ),
-  ModuleDef(
-    id: ModuleId.speaker,
-    title: 'Speaker Test',
-    subtitle: 'Left, right and both channels',
-    icon: Icons.volume_up_rounded,
-    phase: 5,
-  ),
-  ModuleDef(
-    id: ModuleId.microphone,
-    title: 'Microphone Test',
-    subtitle: 'Level meter, record and playback',
-    icon: Icons.mic_rounded,
     phase: 5,
   ),
   ModuleDef(

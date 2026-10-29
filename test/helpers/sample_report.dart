@@ -107,18 +107,10 @@ ReportInputs sampleInputs({Map<ModuleId, TestStatus>? statuses}) => ReportInputs
         'move': 'detected',
         'leftClick': 'detected',
         'rightClick': 'detected',
-        'tap': 'detected',
         'scroll': 'manualPass',
         'ignoredExternalEvents': 41,
       },
       webcam: {'camera': 'Integrated Camera', 'resolution': '1280 × 720', 'result': 'works', 'noCamera': false},
-      speaker: {'left': 'heard', 'right': 'heard', 'both': 'heard'},
-      microphone: {
-        'devices': ['Microphone Array (Realtek)'],
-        'peakDb': -14.0,
-        'signalDetected': true,
-        'result': 'heard',
-      },
       display: {
         'colorsChecked': ['Red', 'Green', 'Blue', 'White', 'Black'],
         'result': 'no problems',

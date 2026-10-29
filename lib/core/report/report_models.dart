@@ -30,10 +30,8 @@ const reportWeights = <ModuleId, int>{
   ModuleId.cpu: 15,
   ModuleId.gpu: 10,
   ModuleId.keyboard: 10,
-  ModuleId.touchpad: 5,
-  ModuleId.webcam: 5,
-  ModuleId.speaker: 5,
-  ModuleId.microphone: 5,
+  ModuleId.touchpad: 10,
+  ModuleId.webcam: 10,
   ModuleId.display: 10,
 };
 

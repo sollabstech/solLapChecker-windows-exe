@@ -89,13 +89,30 @@ void main() {
       expect(kb.keyboards[100]!.counted, isTrue);
     });
 
-    test('a device can be switched on by hand (misclassified internal keyboard)', () async {
+    test('an unidentified USB keyboard can be switched on by hand (e.g. the laptop\'s own)', () async {
+      const unsure = InputDevice(
+        handle: 210,
+        kind: InputDeviceKind.keyboard,
+        path: r'\\?\HID#VID_1038&PID_1122&MI_00#7&1&0&0000#{884b96c3-56ef-11d1-bc8c-00a0c9014b0f}',
+        bus: DeviceBus.usbUnknown,
+      );
+      input.send(keyEvent(unsure, 0x1E));
+      await tick();
+      expect(kb.keys['key_A'], KeyState.untested);
+      kb.setCounted(210, true);
+      input.send(keyEvent(unsure, 0x1E));
+      await tick();
+      expect(kb.keys['key_A'], KeyState.pressed);
+    });
+
+    test('an external keyboard is always ignored: it cannot be switched on', () async {
       input.send(keyEvent(usbKeyboard, 0x1E));
       await tick();
       kb.setCounted(200, true);
       input.send(keyEvent(usbKeyboard, 0x1E));
       await tick();
-      expect(kb.keys['key_A'], KeyState.pressed);
+      expect(kb.keyboards[200]!.counted, isFalse);
+      expect(kb.keys['key_A'], KeyState.untested);
     });
 
     test('releases, Windows fake scan codes and Pause are not key presses', () async {
@@ -114,6 +131,48 @@ void main() {
       await tick();
       expect(kb.testedCount, 0);
       expect(kb.otherKeys, {'0x4B'});
+    });
+
+    test('Fn is detected through Fn + a media key on the built-in keyboard (HID media collection)', () async {
+      input.send(hidEvent(mediaKeys, [1, 0, 0])); // release frame: nothing pressed
+      await tick();
+      expect(kb.keys['fn'], KeyState.untested);
+
+      input.send(hidEvent(mediaKeys, [1, 0xE9, 0])); // volume up
+      await tick();
+      expect(kb.keys['fn'], KeyState.pressed);
+      expect(kb.fnSignal.value, 'Media / volume key');
+      expect(kb.lastKeyId.value, 'fn');
+      expect(kb.toJson()['fnDetectedVia'], 'Media / volume key');
+    });
+
+    test('Fn is detected through the airplane-mode button', () async {
+      input.send(hidEvent(airplaneButton, [1, 1]));
+      await tick();
+      expect(kb.keys['fn'], KeyState.pressed);
+      expect(kb.fnSignal.value, 'Airplane mode');
+    });
+
+    test('Fn is detected through a media key the keyboard reports as a keystroke', () async {
+      input.send(keyEvent(internalKeyboard, 0x30, extended: true, vKey: 0xAF)); // E0 30 = volume up
+      await tick();
+      expect(kb.keys['fn'], KeyState.pressed);
+      expect(kb.fnSignal.value, 'Volume up');
+      expect(kb.otherKeys, isEmpty);
+    });
+
+    test('media keys from an external keyboard do not count as Fn', () async {
+      input.send(hidEvent(externalMediaKeys, [1, 0xE9, 0]));
+      input.send(keyEvent(usbKeyboard, 0x30, extended: true, vKey: 0xAF));
+      await tick();
+      expect(kb.keys['fn'], KeyState.untested);
+      expect(kb.fnSignal.value, isNull);
+    });
+
+    test('touchpad contact reports are not keyboard input', () async {
+      input.send(hidEvent(precisionTouchpad, [1, 3, 0x10, 0x20]));
+      await tick();
+      expect(kb.keys['fn'], KeyState.untested);
     });
 
     test('manual marks: Fn can be confirmed, any key can be failed, a real press overrides', () async {
@@ -232,21 +291,18 @@ void main() {
       expect(state(PadAction.rightClick), ActionState.detected);
     });
 
-    test('a quick touch-and-lift is a tap; a held press is not', () async {
-      // Events are delivered asynchronously, so let each one land before the clock moves.
-      input.send(mouseEvent(touchpad, buttons: riMouseLeftDown));
-      await tick();
-      now = now.add(const Duration(milliseconds: 150));
-      input.send(mouseEvent(touchpad, buttons: riMouseLeftUp));
-      await tick();
-      expect(state(PadAction.tap), ActionState.pending); // a real press
+    test('the touchpad test has four actions: tap to click is gone', () {
+      expect(PadAction.values.map((a) => a.name), ['move', 'leftClick', 'rightClick', 'scroll']);
+    });
 
-      input.send(mouseEvent(touchpad, buttons: riMouseLeftDown));
+    test('an external mouse cannot be switched on', () async {
+      input.send(mouseEvent(usbMouse, buttons: riMouseLeftDown));
       await tick();
-      now = now.add(const Duration(milliseconds: 40));
-      input.send(mouseEvent(touchpad, buttons: riMouseLeftUp));
+      pad.setCounted(usbMouse.handle, true);
+      input.send(mouseEvent(usbMouse, buttons: riMouseLeftDown));
       await tick();
-      expect(state(PadAction.tap), ActionState.detected);
+      expect(pad.mice[usbMouse.handle]!.counted, isFalse);
+      expect(state(PadAction.leftClick), ActionState.pending);
     });
 
     test('wheel from the touchpad scrolls; an external wheel is ignored', () async {
@@ -284,11 +340,55 @@ void main() {
       expect(state(PadAction.scroll), ActionState.detected);
     });
 
-    test('handle-less clicks and moves are never attributed to the touchpad', () async {
+    test('precision touchpad: handle-less moves and clicks count while the pad is touched', () async {
+      input.send(hidEvent(precisionTouchpad, [1, 3, 0x10, 0x20]));
+      await tick();
+      input.send(mouseEvent(synthetic, dx: 300, dy: 200));
+      input.send(mouseEvent(synthetic, buttons: riMouseRightDown));
+      input.send(mouseEvent(synthetic, buttons: riMouseLeftDown));
+      await tick();
+      now = now.add(const Duration(milliseconds: 20));
+      input.send(mouseEvent(synthetic, buttons: riMouseLeftUp));
+      await tick();
+
+      expect(state(PadAction.move), ActionState.detected);
+      expect(state(PadAction.leftClick), ActionState.detected);
+      expect(state(PadAction.rightClick), ActionState.detected);
+      // The touchpad is listed as a counted device.
+      expect(pad.mice[precisionTouchpad.handle]!.counted, isTrue);
+    });
+
+    test('once the pad reports contacts, handle-less input without a recent touch is not the pad', () async {
+      input.send(hidEvent(precisionTouchpad, [1, 3, 0x10, 0x20]));
+      await tick();
+      now = now.add(const Duration(seconds: 3));
       input.send(mouseEvent(synthetic, buttons: riMouseLeftDown, dx: 900, dy: 900));
       await tick();
       expect(state(PadAction.leftClick), ActionState.pending);
       expect(state(PadAction.move), ActionState.pending);
+    });
+
+    test('without contact reports, handle-less input counts unless an external mouse is active', () async {
+      input.send(mouseEvent(usbMouse, dx: 5));
+      input.send(mouseEvent(synthetic, buttons: riMouseLeftDown));
+      await tick();
+      expect(state(PadAction.leftClick), ActionState.pending);
+
+      now = now.add(const Duration(seconds: 2));
+      input.send(mouseEvent(synthetic, buttons: riMouseLeftDown));
+      await tick();
+      expect(state(PadAction.leftClick), ActionState.detected);
+    });
+
+    test('contact reports from a touchpad switched off by hand are not trusted', () async {
+      input.send(hidEvent(precisionTouchpad, [1, 3, 0x10, 0x20]));
+      await tick();
+      pad.setCounted(precisionTouchpad.handle, false);
+      now = now.add(const Duration(seconds: 3));
+      input.send(hidEvent(precisionTouchpad, [1, 3, 0x10, 0x20]));
+      input.send(mouseEvent(synthetic, buttons: riMouseRightDown));
+      await tick();
+      expect(state(PadAction.rightClick), ActionState.pending);
     });
 
     test('verdict: missing actions warn, a broken action fails, all done passes', () async {
@@ -304,7 +404,8 @@ void main() {
       }
       pad.finish();
       expect(app.statusOf(ModuleId.touchpad), TestStatus.pass);
-      expect(pad.toJson()['tap'], 'manualPass');
+      expect(pad.toJson()['scroll'], 'manualPass');
+      expect(pad.toJson().containsKey('tap'), isFalse);
     });
 
     test('a detected action is not downgraded by a manual "works"', () async {

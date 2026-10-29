@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import '../../app/app_modules.dart';
 import '../../app/theme.dart';
 import '../../controllers/app_controller.dart';
+import '../../core/utils/format.dart';
 import '../../widgets/glass_card.dart';
 import '../../widgets/module_scaffold.dart';
 import '../../widgets/stress_panel.dart';
@@ -23,7 +24,10 @@ class _CpuViewState extends State<CpuView> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => c.loadInfo());
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await c.loadInfo();
+      await c.runIfNeeded();
+    });
   }
 
   @override
@@ -50,7 +54,7 @@ class _CpuViewState extends State<CpuView> {
               ),
             ],
             const SizedBox(height: 20),
-            StressPanel(runner: c.runner, part: 'processor'),
+            StressPanel(runner: c.runner, part: 'processor', showTemperature: false),
           ],
         ),
       );
@@ -86,8 +90,8 @@ class _Setup extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              'Puts every core under full load while recording temperature, clock speed and load each second. '
-              'The test stops by itself if the laptop reaches ${CpuController.safetyLimitC} °C.',
+              'Puts every core under full load for the chosen time, with a countdown. '
+              'The test stops by itself if the laptop gets too hot.',
               style: const TextStyle(color: AppColors.muted, fontSize: 13, height: 1.4),
             ),
             const SizedBox(height: 16),
@@ -97,7 +101,7 @@ class _Setup extends StatelessWidget {
                 const SizedBox(width: 14),
                 for (final m in CpuController.durationOptions) ...[
                   ChoiceChip(
-                    label: Text('$m min'),
+                    label: Text(formatDurationChoice(m)),
                     selected: c.durationMin.value == m,
                     onSelected: running ? null : (_) => c.setDuration(m),
                   ),

@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import '../../app/app_modules.dart';
 import '../../app/theme.dart';
 import '../../controllers/app_controller.dart';
+import '../../core/utils/format.dart';
 import '../../core/models/stress.dart';
 import '../../widgets/glass_card.dart';
 import '../../widgets/module_scaffold.dart';
@@ -24,7 +25,7 @@ class _GpuViewState extends State<GpuView> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => c.loadInfo());
+    WidgetsBinding.instance.addPostFrameCallback((_) => c.runIfNeeded().then((_) => c.loadInfo()));
   }
 
   @override
@@ -92,7 +93,7 @@ class _GpuViewState extends State<GpuView> {
               const SizedBox(width: 14),
               for (final m in GpuController.durationOptions) ...[
                 ChoiceChip(
-                  label: Text('$m min'),
+                  label: Text(formatDurationChoice(m)),
                   selected: c.durationMin.value == m,
                   onSelected: running ? null : (_) => c.setDuration(m),
                 ),
@@ -173,7 +174,7 @@ class _GpuCard extends StatelessWidget {
                       gpu.kind,
                       if (!gpu.integrated && gpu.dedicatedMb > 0) '${(gpu.dedicatedMb / 1024).toStringAsFixed(0)} GB VRAM',
                       if (!gpu.hasTempSensor) 'no temperature sensor'
-                      else if (!gpu.hasOwnTempSensor) 'temperature from CPU package',
+                      else if (!gpu.hasOwnTempSensor) 'no temperature sensor (CPU watched for safety)',
                     ].join('  ·  '),
                     style: const TextStyle(color: AppColors.muted, fontSize: 12.5),
                   ),

@@ -1,6 +1,21 @@
 import 'raw_input_event.dart';
 
-enum InputDeviceKind { keyboard, mouse }
+enum InputDeviceKind {
+  keyboard,
+  mouse,
+
+  /// Another HID collection (media keys, airplane button, precision touchpad...).
+  hid,
+}
+
+// HID usage page / usage pairs that Raw Input is asked for besides keyboards and mice.
+const hidPageGenericDesktop = 0x01;
+const hidUsageSystemControl = 0x80; // sleep / power buttons
+const hidUsageRadioControls = 0x0C; // airplane-mode button
+const hidPageConsumer = 0x0C;
+const hidUsageConsumerControl = 0x01; // volume, mute, media, brightness keys
+const hidPageDigitizer = 0x0D;
+const hidUsageTouchpad = 0x05; // Windows precision touchpad
 
 /// How a device is attached, as far as we can tell.
 enum DeviceBus {
@@ -47,10 +62,25 @@ class InputDevice {
     required this.kind,
     required this.path,
     required this.bus,
+    this.usagePage = 0,
+    this.usage = 0,
   });
 
   final int handle;
   final InputDeviceKind kind;
+
+  /// Top-level HID collection, for [InputDeviceKind.hid] devices (0 otherwise).
+  final int usagePage;
+  final int usage;
+
+  /// A Windows precision touchpad's contact reports.
+  bool get isTouchpadDigitizer => usagePage == hidPageDigitizer && usage == hidUsageTouchpad;
+
+  /// Media/system/airplane keys. On a laptop keyboard these are reached with
+  /// Fn, so a press from a built-in one shows that Fn works.
+  bool get isFunctionKeySource =>
+      (usagePage == hidPageConsumer && usage == hidUsageConsumerControl) ||
+      (usagePage == hidPageGenericDesktop && (usage == hidUsageSystemControl || usage == hidUsageRadioControls));
 
   /// Raw Input device interface path, e.g. `\\?\ACPI#PNP0303#4&1b9a1d65&0#{...}`.
   final String path;
@@ -59,6 +89,11 @@ class InputDevice {
   /// Counts as part of the laptop itself.
   bool get isInternal =>
       bus == DeviceBus.acpi || bus == DeviceBus.internalHid || bus == DeviceBus.usbInternal;
+
+  /// A plugged-in USB, Bluetooth or virtual device: never part of the laptop,
+  /// so its input is always ignored and cannot be switched on.
+  bool get canBeCounted =>
+      bus != DeviceBus.usbExternal && bus != DeviceBus.bluetooth && bus != DeviceBus.virtual;
 
   /// Whether events from this device are counted before the user overrides it.
   /// External and unidentified USB devices are ignored; anything else we
